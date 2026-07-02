@@ -4,6 +4,7 @@ import httpx
 import uuid
 import asyncio
 import logging
+from datetime import datetime
 from config import settings
 
 logger = logging.getLogger(__name__)
@@ -39,12 +40,15 @@ async def create_invoice(machine_id: str, slot_id: int, amount: float,
     """
     mis_payment_id = f"VND-{machine_id}-{slot_id}-{uuid.uuid4().hex[:8].upper()}"
     payload = {
-        "merchant_id": settings.JETQR_MERCHANT_ID,
-        "store_id": store_id or settings.JETQR_STORE_ID,
-        "terminal_id": terminal_id or settings.JETQR_TERMINAL_ID,
+        # По офиц. мерчантской документации все id передаются строками, а
+        # mis_payment_time — обязательное поле (ISO 8601 с таймзоной).
+        "merchant_id": str(settings.JETQR_MERCHANT_ID),
+        "store_id": str(store_id or settings.JETQR_STORE_ID),
+        "terminal_id": str(terminal_id or settings.JETQR_TERMINAL_ID),
         "mis_terminal_id": settings.JETQR_MIS_TERMINAL_ID,
         "mis_payment_id": mis_payment_id,
         "mis_amount": amount,
+        "mis_payment_time": datetime.now().astimezone().replace(microsecond=0).isoformat(),
     }
 
     for attempt in range(3):
@@ -55,7 +59,9 @@ async def create_invoice(machine_id: str, slot_id: int, amount: float,
                 json=payload,
             )
             data = response.json()
-            if data.get("type") == "SUCCESS":
+            # Успешный ответ создания: {"code": 200, "invoice_id": "...", "created_at": ...}
+            # (поля "type" в этой версии API нет — сверяемся по code + наличию invoice_id).
+            if str(data.get("code")) == "200" and data.get("invoice_id"):
                 return {
                     "success": True,
                     "invoice_id": data["invoice_id"],
@@ -83,21 +89,23 @@ async def check_invoice(invoice_id: str) -> dict:
             logger.warning(f"check_invoice attempt {attempt+1} error: {e}")
             return {"paid": False, "pending": True}
 
-        code = data.get("code")
-        if code == 200:
+        # code приходит и числом, и строкой ("200"/"202"/"203"/"404") — нормализуем.
+        code = str(data.get("code"))
+        if code == "200":
             return {
                 "paid": True,
                 "phone": data.get("phone_number"),
                 "amount": data.get("amount_arrived"),
                 "bank": data.get("bank_name"),
-                "transaction_id": data.get("transaction_id"),
+                "transaction_id": data.get("transaction_id"),  # в ответе может отсутствовать
             }
-        elif code == 202:
-            return {"paid": False, "pending": True}
+        elif code == "202":
+            return {"paid": False, "pending": True}   # инвойс ещё в обработке
         elif response.status_code >= 500 and attempt == 0:
             await asyncio.sleep(0.5)
             continue
         else:
+            # 203 — ошибочное состояние инвойса, 404 — не найден
             return {"paid": False, "pending": False, "error": True}
     return {"paid": False, "pending": False, "error": True}
 

@@ -71,7 +71,12 @@ class VMCLink:
         return no
 
     def queue_dispense(self, slot_id: int):
-        self._outbox.append(vmc.build_buy(self._next_pack_no(), slot_id))
+        # Команда 0x06 (drive direct) с drop_sensor=1, elevator=0 — именно так
+        # выдаёт товар рабочее заводское приложение dc.com.vending на этом железе
+        # (проверено разбором его APK). Надёжнее, чем 0x03: явно включает датчик падения.
+        self._outbox.append(
+            vmc.build_drive_direct(self._next_pack_no(), slot_id,
+                                   drop_sensor=True, elevator=False))
 
     def queue_sync(self):
         self._outbox.append(vmc.build_sync(self._next_pack_no()))
