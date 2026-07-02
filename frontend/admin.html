@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Vending Admin</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { font-family:-apple-system,Roboto,Arial,sans-serif; background:#f4f6fa; color:#1a1d26; }
+  header { background:#1a1d26; color:#fff; padding:14px 22px; display:flex;
+           justify-content:space-between; align-items:center; }
+  header h1 { font-size:18px; }
+  header input { padding:7px 10px; border-radius:8px; border:0; width:260px; }
+  main { max-width:1100px; margin:0 auto; padding:20px; }
+  section { background:#fff; border-radius:14px; padding:18px; margin-bottom:18px;
+            box-shadow:0 1px 4px rgba(0,0,0,.06); }
+  h2 { font-size:16px; margin-bottom:12px; }
+  table { width:100%; border-collapse:collapse; font-size:14px; }
+  th, td { text-align:left; padding:8px 10px; border-bottom:1px solid #eef; }
+  th { color:#889; font-weight:600; font-size:12px; text-transform:uppercase; }
+  .dot { width:10px; height:10px; border-radius:50%; display:inline-block; background:#e74c3c; }
+  .dot.on { background:#2ecc71; }
+  .cards { display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:12px;
+           margin-bottom:18px; }
+  .card { background:#fff; border-radius:14px; padding:16px; box-shadow:0 1px 4px rgba(0,0,0,.06); }
+  .card .v { font-size:26px; font-weight:800; }
+  .card .l { font-size:12px; color:#889; margin-top:2px; }
+  button { background:#2563eb; color:#fff; border:0; padding:8px 14px; border-radius:8px;
+           cursor:pointer; font-size:13px; }
+  button.gray { background:#67718a; }
+  input, select { padding:7px 9px; border:1px solid #ccd; border-radius:7px; font-size:13px; }
+  .row { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:10px; }
+  .status-dispensed { color:#16a34a; } .status-refund_pending { color:#dc2626; font-weight:700; }
+  .status-refunded { color:#d97706; } .status-pending { color:#889; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Vending — Админка</h1>
+  <input type="password" id="token" placeholder="Admin token" onchange="saveToken()">
+</header>
+<main>
+  <div class="cards" id="stat-cards"></div>
+
+  <section>
+    <h2>Точки</h2>
+    <div class="row">
+      <input id="new-mid" placeholder="machine_id (VND-001)">
+      <input id="new-name" placeholder="Название">
+      <input id="new-loc" placeholder="Локация">
+      <button onclick="addMachine()">Добавить точку</button>
+    </div>
+    <table id="machines"><thead><tr>
+      <th></th><th>ID</th><th>Название</th><th>Локация</th><th></th>
+    </tr></thead><tbody></tbody></table>
+  </section>
+
+  <section id="slots-section" style="display:none">
+    <h2>Слоты: <span id="slots-mid"></span></h2>
+    <div class="row">
+      <input id="slot-id" placeholder="Слот №" type="number" style="width:80px">
+      <input id="slot-name" placeholder="Товар">
+      <input id="slot-price" placeholder="Цена" type="number" step="0.01" style="width:90px">
+      <input id="slot-stock" placeholder="Остаток" type="number" style="width:90px">
+      <button onclick="saveSlot()">Сохранить слот</button>
+    </div>
+    <table id="slots"><thead><tr>
+      <th>Слот</th><th>Товар</th><th>Цена</th><th>Остаток</th><th>Активен</th>
+    </tr></thead><tbody></tbody></table>
+  </section>
+
+  <section>
+    <h2>Последние сессии</h2>
+    <table id="sessions"><thead><tr>
+      <th>ID</th><th>Точка</th><th>Слот</th><th>Товар</th><th>Сумма</th><th>Статус</th>
+      <th>Телефон</th><th>Ошибка</th><th>Время</th><th></th>
+    </tr></thead><tbody></tbody></table>
+  </section>
+</main>
+
+<script>
+let TOKEN = localStorage.getItem('admin_token') || '';
+document.getElementById('token').value = TOKEN;
+function saveToken() {
+  TOKEN = document.getElementById('token').value;
+  localStorage.setItem('admin_token', TOKEN);
+  refresh();
+}
+const H = () => ({'Content-Type':'application/json','X-Admin-Token':TOKEN});
+let currentMid = null;
+
+async function api(path, opts={}) {
+  const r = await fetch(path, {...opts, headers:{...H(), ...(opts.headers||{})}});
+  if (r.status === 401) { alert('Неверный admin token'); throw 0; }
+  return r.json();
+}
+
+async function refresh() {
+  if (!TOKEN) return;
+  const [stats, machines, sessions] = await Promise.all([
+    api('/api/admin/stats'), api('/api/admin/machines'), api('/api/admin/sessions'),
+  ]);
+
+  document.getElementById('stat-cards').innerHTML = `
+    <div class="card"><div class="v">${stats.total_revenue.toFixed(2)}</div><div class="l">Выручка сегодня</div></div>
+    <div class="card"><div class="v">${stats.by_machine.reduce((a,m)=>a+m.sales,0)}</div><div class="l">Продаж сегодня</div></div>
+    <div class="card"><div class="v">${stats.machines_online}</div><div class="l">Точек онлайн</div></div>
+    <div class="card"><div class="v">${stats.refunds_today}</div><div class="l">Возвратов сегодня</div></div>`;
+
+  document.querySelector('#machines tbody').innerHTML = machines.map(m => `
+    <tr><td><span class="dot ${m.online?'on':''}"></span></td>
+    <td>${m.machine_id}</td><td>${m.name||''}</td><td>${m.location||''}</td>
+    <td><button class="gray" onclick="showSlots('${m.machine_id}')">Слоты</button></td></tr>`).join('');
+
+  document.querySelector('#sessions tbody').innerHTML = sessions.map(s => `
+    <tr><td>${s.id}</td><td>${s.machine_id}</td><td>${s.slot_id}</td>
+    <td>${s.product_name||''}</td><td>${s.amount}</td>
+    <td class="status-${s.status}">${s.status}</td>
+    <td>${s.phone_number||''}</td><td>${s.error||''}</td>
+    <td>${new Date(s.created_at+'Z').toLocaleString('ru')}</td>
+    <td>${s.status==='refund_pending' ? `<button onclick="retryRefund(${s.id})">Повторить возврат</button>` : ''}</td>
+    </tr>`).join('');
+
+  if (currentMid) showSlots(currentMid);
+}
+
+async function addMachine() {
+  const machine_id = document.getElementById('new-mid').value.trim();
+  if (!machine_id) return;
+  const r = await api('/api/admin/machines', {method:'POST', body:JSON.stringify({
+    machine_id, name:document.getElementById('new-name').value,
+    location:document.getElementById('new-loc').value})});
+  alert(`Точка создана.\n\nТокен контроллера (сохраните, показывается один раз):\n\n${r.secret_token}`);
+  refresh();
+}
+
+async function showSlots(mid) {
+  currentMid = mid;
+  document.getElementById('slots-section').style.display = '';
+  document.getElementById('slots-mid').textContent = mid;
+  const slots = await api(`/api/admin/machines/${mid}/slots`);
+  document.querySelector('#slots tbody').innerHTML = slots.map(s => `
+    <tr><td>${s.slot_id}</td><td>${s.product_name}</td><td>${s.price}</td>
+    <td>${s.stock_qty}/${s.capacity}</td><td>${s.is_active?'✓':'—'}</td></tr>`).join('');
+}
+
+async function saveSlot() {
+  if (!currentMid) return;
+  await api(`/api/admin/machines/${currentMid}/slots`, {method:'POST', body:JSON.stringify({
+    slot_id:+document.getElementById('slot-id').value,
+    product_name:document.getElementById('slot-name').value,
+    price:+document.getElementById('slot-price').value,
+    stock_qty:+document.getElementById('slot-stock').value})});
+  showSlots(currentMid);
+}
+
+async function retryRefund(id) {
+  await api(`/api/admin/sessions/${id}/retry-refund`, {method:'POST'});
+  setTimeout(refresh, 1500);
+}
+
+refresh();
+setInterval(refresh, 15000);
+</script>
+</body>
+</html>

@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Vending</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  body { font-family:-apple-system,Roboto,Arial,sans-serif; background:#0f1220; color:#fff;
+         min-height:100vh; user-select:none; }
+  header { padding:16px 20px; display:flex; justify-content:space-between; align-items:center;
+           background:#161a2e; }
+  header h1 { font-size:20px; font-weight:600; }
+  #status-dot { width:12px; height:12px; border-radius:50%; background:#e74c3c; display:inline-block; }
+  #status-dot.online { background:#2ecc71; }
+
+  #catalog { display:grid; grid-template-columns:repeat(auto-fill,minmax(150px,1fr));
+             gap:14px; padding:18px; }
+  .product { background:#1d2340; border-radius:16px; padding:14px; text-align:center;
+             cursor:pointer; transition:transform .1s; border:2px solid transparent; }
+  .product:active { transform:scale(.96); }
+  .product.out { opacity:.35; pointer-events:none; }
+  .product img { width:100%; height:110px; object-fit:contain; border-radius:10px; background:#0f1220; }
+  .product .noimg { width:100%; height:110px; border-radius:10px; background:#0f1220;
+                    display:flex; align-items:center; justify-content:center; font-size:42px; }
+  .product h3 { font-size:15px; margin:10px 0 4px; font-weight:500; }
+  .product .price { font-size:18px; font-weight:700; color:#4da3ff; }
+  .product .slot { font-size:11px; color:#667; margin-top:4px; }
+
+  /* Модалка оплаты */
+  #overlay { position:fixed; inset:0; background:rgba(5,7,15,.93); display:none;
+             flex-direction:column; align-items:center; justify-content:center; padding:24px;
+             text-align:center; z-index:10; }
+  #overlay.show { display:flex; }
+  #overlay h2 { font-size:22px; margin-bottom:6px; }
+  #overlay .amount { font-size:34px; font-weight:800; color:#4da3ff; margin-bottom:18px; }
+  #qr-img { width:290px; height:290px; background:#fff; border-radius:18px; padding:12px; }
+  #overlay .hint { margin-top:16px; color:#9aa; font-size:15px; max-width:340px; line-height:1.45; }
+  #big-status { font-size:64px; margin-bottom:14px; }
+  #status-text { font-size:20px; line-height:1.5; max-width:360px; }
+  .btn { margin-top:26px; background:#26305a; color:#fff; border:0; padding:14px 38px;
+         font-size:17px; border-radius:12px; cursor:pointer; }
+  .btn.primary { background:#2563eb; }
+  #timer { margin-top:12px; color:#667; font-size:14px; }
+</style>
+</head>
+<body>
+<header>
+  <h1 id="machine-name">Vending</h1>
+  <span><span id="status-dot"></span></span>
+</header>
+
+<div id="catalog"></div>
+
+<div id="overlay">
+  <div id="pay-view">
+    <h2 id="pay-product"></h2>
+    <div class="amount" id="pay-amount"></div>
+    <img id="qr-img" alt="QR">
+    <div class="hint">Отсканируйте QR-код любым банковским приложением и подтвердите оплату</div>
+    <div id="timer"></div>
+    <button class="btn" onclick="cancelFlow()">Отмена</button>
+  </div>
+  <div id="result-view" style="display:none">
+    <div id="big-status"></div>
+    <div id="status-text"></div>
+    <button class="btn primary" id="done-btn" onclick="resetFlow()" style="display:none">Готово</button>
+  </div>
+</div>
+
+<script>
+const machineId = location.pathname.split('/').pop();
+let session = null, pollTimer = null, countdownTimer = null, ws = null;
+
+async function loadCatalog() {
+  try {
+    const r = await fetch(`/api/kiosk/${machineId}/products`);
+    if (!r.ok) throw 0;
+    const data = await r.json();
+    document.getElementById('machine-name').textContent = data.name || 'Vending';
+    document.getElementById('status-dot').classList.toggle('online', data.online);
+    const cat = document.getElementById('catalog');
+    cat.innerHTML = '';
+    for (const p of data.products) {
+      const div = document.createElement('div');
+      div.className = 'product' + (p.available ? '' : ' out');
+      div.innerHTML = `
+        ${p.image_url ? `<img src="${p.image_url}">` : `<div class="noimg">🥤</div>`}
+        <h3>${p.name}</h3>
+        <div class="price">${p.price.toFixed(2)}</div>
+        <div class="slot">Слот ${p.slot_id}${p.available ? '' : ' · нет в наличии'}</div>`;
+      div.onclick = () => buy(p);
+      cat.appendChild(div);
+    }
+  } catch (e) { /* сервер недоступен — покажем при следующем цикле */ }
+}
+
+async function buy(p) {
+  if (session) return;
+  const r = await fetch(`/api/kiosk/${machineId}/buy`, {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({slot_id: p.slot_id}),
+  });
+  if (!r.ok) {
+    const err = r.status === 503 ? 'Автомат временно недоступен' :
+                r.status === 409 ? 'Товар закончился' : 'Ошибка, попробуйте позже';
+    showResult('⚠️', err, true);
+    document.getElementById('overlay').classList.add('show');
+    return;
+  }
+  session = await r.json();
+  document.getElementById('pay-product').textContent = session.product;
+  document.getElementById('pay-amount').textContent = session.amount.toFixed(2);
+  document.getElementById('qr-img').src = session.qr_url;
+  document.getElementById('pay-view').style.display = '';
+  document.getElementById('result-view').style.display = 'none';
+  document.getElementById('overlay').classList.add('show');
+  startCountdown(300);
+  pollTimer = setInterval(checkStatus, 2500);  // резерв на случай пропуска WS-события
+}
+
+function startCountdown(sec) {
+  const el = document.getElementById('timer');
+  countdownTimer = setInterval(() => {
+    sec--;
+    el.textContent = `Ожидание оплаты: ${Math.floor(sec/60)}:${String(sec%60).padStart(2,'0')}`;
+    if (sec <= 0) resetFlow();
+  }, 1000);
+}
+
+async function checkStatus() {
+  if (!session) return;
+  const r = await fetch(`/api/kiosk/session/${session.session_id}`);
+  if (!r.ok) return;
+  handleStatus((await r.json()).status);
+}
+
+function handleStatus(status) {
+  if (status === 'paid' || status === 'dispensing') {
+    showResult('⏳', 'Оплата получена. Выдаём товар…', false);
+  } else if (status === 'dispensed') {
+    showResult('✅', 'Заберите товар. Спасибо за покупку!', true);
+    setTimeout(resetFlow, 8000);
+  } else if (status === 'refund_pending' || status === 'refunded') {
+    showResult('↩️', 'Не удалось выдать товар.\nДеньги будут возвращены автоматически.', true);
+  } else if (status === 'expired') {
+    resetFlow();
+  }
+}
+
+function showResult(icon, text, showDone) {
+  clearInterval(countdownTimer);
+  document.getElementById('pay-view').style.display = 'none';
+  document.getElementById('result-view').style.display = '';
+  document.getElementById('big-status').textContent = icon;
+  document.getElementById('status-text').textContent = text;
+  document.getElementById('done-btn').style.display = showDone ? '' : 'none';
+}
+
+function cancelFlow() { resetFlow(); }
+
+function resetFlow() {
+  clearInterval(pollTimer); clearInterval(countdownTimer);
+  session = null;
+  document.getElementById('overlay').classList.remove('show');
+  loadCatalog();
+}
+
+function connectWS() {
+  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+  ws = new WebSocket(`${proto}://${location.host}/ws/kiosk/${machineId}`);
+  ws.onmessage = (e) => {
+    const msg = JSON.parse(e.data);
+    if (msg.type === 'ping') { ws.send('{"type":"pong"}'); return; }
+    if (!session || msg.session_id !== session.session_id) return;
+    if (msg.type === 'paid') handleStatus('paid');
+    if (msg.type === 'dispensed') handleStatus('dispensed');
+    if (msg.type === 'refund_started' || msg.type === 'refunded') handleStatus('refund_pending');
+    if (msg.type === 'payment_timeout') resetFlow();
+  };
+  ws.onclose = () => setTimeout(connectWS, 3000);
+}
+
+loadCatalog();
+connectWS();
+setInterval(loadCatalog, 60000);  // обновление каталога/цен раз в минуту
+</script>
+</body>
+</html>

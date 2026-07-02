@@ -1,0 +1,10 @@
+fastapi
+uvicorn[standard]
+sqlalchemy
+psycopg2-binary
+pydantic-settings
+httpx
+qrcode[pil]
+# controller-only (на планшете/Pi):
+# pyserial
+# websockets

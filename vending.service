@@ -1,0 +1,14 @@
+[Unit]
+Description=Vending QR Payment System
+After=network.target postgresql.service
+
+[Service]
+Type=simple
+User=vending
+WorkingDirectory=/opt/vending-project/backend
+ExecStart=/opt/vending-project/venv/bin/uvicorn main:app --host 0.0.0.0 --port 8000
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
