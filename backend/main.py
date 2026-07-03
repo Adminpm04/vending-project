@@ -625,6 +625,19 @@ frontend_dir = os.path.join(os.path.dirname(__file__), "..", "frontend")
 if os.path.isdir(frontend_dir):
     app.mount("/static", StaticFiles(directory=frontend_dir), name="static")
 
+    @app.get("/apk")
+    async def download_apk():
+        """Короткая ссылка для установки на планшет прямо из браузера точки —
+        без QR (планшет закреплён в автомате, камерой не отсканировать)."""
+        path = os.path.join(frontend_dir, "vending-kiosk.apk")
+        if not os.path.exists(path):
+            raise HTTPException(404, "APK not uploaded yet")
+        return FileResponse(
+            path,
+            media_type="application/vnd.android.package-archive",
+            filename="vending-kiosk.apk",
+        )
+
     @app.get("/kiosk/{machine_id}", response_class=HTMLResponse)
     async def kiosk_page(machine_id: str):
         return FileResponse(os.path.join(frontend_dir, "kiosk.html"))
