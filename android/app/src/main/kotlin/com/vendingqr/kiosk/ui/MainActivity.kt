@@ -8,6 +8,7 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
+import android.view.MotionEvent
 import android.view.View
 import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
@@ -39,10 +40,7 @@ class MainActivity : AppCompatActivity() {
         window.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         applyImmersiveMode()
 
-        binding.settingsHotspot.setOnLongClickListener {
-            startActivity(Intent(this, SettingsActivity::class.java))
-            true
-        }
+        setupSettingsHotspot()
 
         if (Prefs.isConfigured(this)) {
             startControllerService()
@@ -104,6 +102,46 @@ class MainActivity : AppCompatActivity() {
         binding.webView.loadUrl(Prefs.kioskUrl(this))
     }
 
+    /**
+     * Свой long-press вместо View.setOnLongClickListener: у системного жеста
+     * маленький допуск на дрожание пальца/курсора (touch slop ~8dp), из-за
+     * чего он часто срывается при эмуляции касания мышью (BlueStacks и т.п.).
+     * Здесь допуск сильно шире — держит жест, даже если курсор чуть сместился.
+     */
+    private fun setupSettingsHotspot() {
+        val hotspotHandler = Handler(Looper.getMainLooper())
+        var pressStartX = 0f
+        var pressStartY = 0f
+        val openSettings = Runnable {
+            startActivity(Intent(this, SettingsActivity::class.java))
+        }
+
+        binding.settingsHotspot.setOnTouchListener { _, event ->
+            when (event.action) {
+                MotionEvent.ACTION_DOWN -> {
+                    pressStartX = event.rawX
+                    pressStartY = event.rawY
+                    hotspotHandler.removeCallbacks(openSettings)
+                    hotspotHandler.postDelayed(openSettings, LONG_PRESS_MS)
+                    true
+                }
+                MotionEvent.ACTION_MOVE -> {
+                    val dx = event.rawX - pressStartX
+                    val dy = event.rawY - pressStartY
+                    if (dx * dx + dy * dy > MOVE_TOLERANCE_PX * MOVE_TOLERANCE_PX) {
+                        hotspotHandler.removeCallbacks(openSettings)
+                    }
+                    true
+                }
+                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                    hotspotHandler.removeCallbacks(openSettings)
+                    true
+                }
+                else -> false
+            }
+        }
+    }
+
     private fun scheduleRetry() {
         retryHandler.removeCallbacksAndMessages(null)
         retryHandler.postDelayed({
@@ -161,5 +199,7 @@ class MainActivity : AppCompatActivity() {
 
     companion object {
         private const val TAG = "MainActivity"
+        private const val LONG_PRESS_MS = 1200L
+        private const val MOVE_TOLERANCE_PX = 80f
     }
 }

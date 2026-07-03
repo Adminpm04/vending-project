@@ -37,11 +37,13 @@
             android:textSize="18sp" />
     </LinearLayout>
 
-    <!-- Невидимая зона в углу: долгое нажатие открывает настройки техника -->
+    <!-- Невидимая зона в углу: долгое нажатие открывает настройки техника.
+         Крупная (160dp) — легче попасть мышью в эмуляторе, палец на реальном
+         экране не задевает её случайно при пролистывании каталога снизу/по центру. -->
     <View
         android:id="@+id/settingsHotspot"
-        android:layout_width="64dp"
-        android:layout_height="64dp"
+        android:layout_width="160dp"
+        android:layout_height="160dp"
         android:layout_gravity="top|start" />
 
 </FrameLayout>
