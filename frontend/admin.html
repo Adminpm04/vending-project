@@ -125,8 +125,9 @@
 
 <script>
 // ── Тема ──
+function prefersDark(){ return !!(window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches); }
 function initTheme(){
-  const t = localStorage.getItem('vq_theme') || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark':'light');
+  const t = localStorage.getItem('vq_theme') || (prefersDark() ? 'dark':'light');
   document.documentElement.setAttribute('data-theme', t);
 }
 function toggleTheme(){
