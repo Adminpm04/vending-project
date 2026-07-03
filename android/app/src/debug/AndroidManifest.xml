@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Только для debug-сборки: разрешаем запускать SettingsActivity извне
+  (adb shell am start), чтобы можно было настроить киоск на эмуляторах
+  (BlueStacks и т.п.), где долгое нажатие мышью может не сработать из-за
+  особенностей эмуляции касания. В release-сборке остаётся exported="false"
+  из основного манифеста — снаружи запустить настройки нельзя.
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+    <application>
+        <activity
+            android:name=".ui.SettingsActivity"
+            android:exported="true"
+            tools:replace="android:exported" />
+    </application>
+</manifest>
