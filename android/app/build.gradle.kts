@@ -25,7 +25,11 @@ android {
             }
         }
         ndk {
-            abiFilters += listOf("armeabi-v7a", "arm64-v8a")
+            // Реальные точки — только ARM (armeabi-v7a/arm64-v8a). x86_64 добавлен
+            // отдельно ради тестирования в BlueStacks/эмуляторах на Windows/Mac —
+            // без него нативная либа не грузится на x86-хосте (UnsatisfiedLinkError),
+            // хотя serial-порт там всё равно физически отсутствует (ожидаемо).
+            abiFilters += listOf("armeabi-v7a", "arm64-v8a", "x86_64")
         }
     }
 

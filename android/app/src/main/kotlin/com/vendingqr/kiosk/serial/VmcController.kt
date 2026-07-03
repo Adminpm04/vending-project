@@ -44,7 +44,11 @@ class VmcController(
         try {
             link.start()
             lastError = null
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
+            // Throwable, не Exception: если нативная .so не грузится под текущую
+            // архитектуру (эмулятор x86, битый .so), JVM бросает UnsatisfiedLinkError —
+            // это Error, а не Exception, обычный catch(Exception) его бы не поймал
+            // и приложение упало бы вместо аккуратного "нет связи с VMC".
             lastError = "Serial: ${e.message}"
             Log.e(TAG, "failed to open serial port", e)
         }
