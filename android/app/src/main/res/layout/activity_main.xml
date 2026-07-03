@@ -20,6 +20,7 @@
         android:visibility="gone">
 
         <ProgressBar
+            android:id="@+id/statusSpinner"
             android:layout_width="64dp"
             android:layout_height="64dp"
             android:indeterminateTint="@color/brand_accent" />

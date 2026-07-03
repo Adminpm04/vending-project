@@ -49,7 +49,9 @@ class MainActivity : AppCompatActivity() {
             setupWebView()
             loadKiosk()
         } else {
-            showOverlay(getString(R.string.err_not_configured))
+            // Статичное состояние ожидания настройки — без спиннера, иначе
+            // выглядит как зависшая загрузка, хотя это штатное состояние.
+            showOverlay(getString(R.string.err_not_configured), showSpinner = false)
         }
     }
 
@@ -90,7 +92,7 @@ class MainActivity : AppCompatActivity() {
                 ) {
                     if (request.isForMainFrame) {
                         Log.w(TAG, "load error: ${error.description}")
-                        showOverlay("Нет связи с сервером\nПробуем снова…")
+                        showOverlay("Нет связи с сервером\nПробуем снова…", showSpinner = true)
                         scheduleRetry()
                     }
                 }
@@ -110,8 +112,9 @@ class MainActivity : AppCompatActivity() {
         retryDelayMs = (retryDelayMs * 2).coerceAtMost(30_000)
     }
 
-    private fun showOverlay(text: String) {
+    private fun showOverlay(text: String, showSpinner: Boolean) {
         binding.statusText.text = text
+        binding.statusSpinner.visibility = if (showSpinner) View.VISIBLE else View.GONE
         binding.statusOverlay.visibility = View.VISIBLE
     }
 
