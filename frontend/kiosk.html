@@ -1,95 +1,196 @@
 <!DOCTYPE html>
 <html lang="ru">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-<title>Vending</title>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<title>Vending QR</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <style>
-  * { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
-  body { font-family:-apple-system,Roboto,Arial,sans-serif; background:#0f1220; color:#fff;
-         min-height:100vh; user-select:none; }
-  header { padding:16px 20px; display:flex; justify-content:space-between; align-items:center;
-           background:#161a2e; }
-  header h1 { font-size:20px; font-weight:600; }
-  #status-dot { width:12px; height:12px; border-radius:50%; background:#e74c3c; display:inline-block; }
-  #status-dot.online { background:#2ecc71; }
-
-  #catalog { display:grid; grid-template-columns:repeat(auto-fill,minmax(150px,1fr));
-             gap:14px; padding:18px; }
-  .product { background:#1d2340; border-radius:16px; padding:14px; text-align:center;
-             cursor:pointer; transition:transform .1s; border:2px solid transparent; }
-  .product:active { transform:scale(.96); }
-  .product.out { opacity:.35; pointer-events:none; }
-  .product img { width:100%; height:110px; object-fit:contain; border-radius:10px; background:#0f1220; }
-  .product .noimg { width:100%; height:110px; border-radius:10px; background:#0f1220;
-                    display:flex; align-items:center; justify-content:center; font-size:42px; }
-  .product h3 { font-size:15px; margin:10px 0 4px; font-weight:500; }
-  .product .price { font-size:18px; font-weight:700; color:#4da3ff; }
-  .product .slot { font-size:11px; color:#667; margin-top:4px; }
-
-  /* Модалка оплаты */
-  #overlay { position:fixed; inset:0; background:rgba(5,7,15,.93); display:none;
-             flex-direction:column; align-items:center; justify-content:center; padding:24px;
-             text-align:center; z-index:10; }
-  #overlay.show { display:flex; }
-  #overlay h2 { font-size:22px; margin-bottom:6px; }
-  #overlay .amount { font-size:34px; font-weight:800; color:#4da3ff; margin-bottom:18px; }
-  #qr-img { width:290px; height:290px; background:#fff; border-radius:18px; padding:12px; }
-  #overlay .hint { margin-top:16px; color:#9aa; font-size:15px; max-width:340px; line-height:1.45; }
-  #big-status { font-size:64px; margin-bottom:14px; }
-  #status-text { font-size:20px; line-height:1.5; max-width:360px; }
-  .btn { margin-top:26px; background:#26305a; color:#fff; border:0; padding:14px 38px;
-         font-size:17px; border-radius:12px; cursor:pointer; }
-  .btn.primary { background:#2563eb; }
-  #timer { margin-top:12px; color:#667; font-size:14px; }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{height:100%}
+  body{margin:0;font-family:'Manrope',system-ui,sans-serif;-webkit-font-smoothing:antialiased;
+       background:var(--bg);color:var(--text);user-select:none;overflow:hidden;transition:background .35s,color .35s}
+  [data-theme="light"]{--bg:#F5F5F5;--surf:#FFFFFF;--text:#111111;--text2:#6B6B6B;--line:#E6E6E6;--accent:#8B253B;--accent2:#8B253B;--glass:rgba(245,245,245,.68);--card-sh:0 2px 6px rgba(17,17,17,.05),0 14px 34px rgba(17,17,17,.10);--card-sh-h:0 6px 14px rgba(17,17,17,.07),0 24px 48px rgba(17,17,17,.16);--btn-sh:0 8px 22px rgba(139,37,59,.35),inset 0 1px 0 rgba(255,255,255,.22);--ped:linear-gradient(150deg,#FFFFFF 0%,#EDEDED 100%);--ped-inner:inset 0 -10px 22px rgba(17,17,17,.06),inset 0 2px 0 rgba(255,255,255,.9)}
+  [data-theme="dark"]{--bg:#111111;--surf:#1B1B1B;--text:#F5F5F5;--text2:#9A9A9A;--line:#2A2A2A;--accent:#8B253B;--accent2:#C24A63;--glass:rgba(17,17,17,.68);--card-sh:0 2px 6px rgba(0,0,0,.45),0 14px 34px rgba(0,0,0,.5);--card-sh-h:0 6px 14px rgba(0,0,0,.5),0 24px 48px rgba(0,0,0,.6);--btn-sh:0 8px 24px rgba(139,37,59,.5),inset 0 1px 0 rgba(255,255,255,.14);--ped:linear-gradient(150deg,#242424 0%,#181818 100%);--ped-inner:inset 0 -10px 22px rgba(0,0,0,.35),inset 0 1px 0 rgba(255,255,255,.05)}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  @keyframes glowdot{0%,100%{box-shadow:0 0 0 0 rgba(46,158,91,.55)}70%{box-shadow:0 0 0 8px rgba(46,158,91,0)}}
+  @keyframes glowdotred{0%,100%{box-shadow:0 0 0 0 rgba(209,67,67,.55)}70%{box-shadow:0 0 0 8px rgba(209,67,67,0)}}
+  @keyframes fadeup{from{opacity:0;transform:translateY(18px)}to{opacity:1;transform:none}}
+  @keyframes pop{0%{transform:scale(.4);opacity:0}60%{transform:scale(1.08)}100%{transform:scale(1);opacity:1}}
+  @keyframes checkdraw{to{stroke-dashoffset:0}}
+  @keyframes softpulse{0%,100%{opacity:1}50%{opacity:.55}}
+  #app{position:fixed;inset:0;display:flex;flex-direction:column}
+  .hdr{display:flex;align-items:center;gap:16px;padding:24px 30px 18px;flex:none}
+  .hdr h1{font-size:26px;font-weight:800;line-height:1.15;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin:0}
+  .hdr .sub{font-size:15px;font-weight:500;color:var(--text2);margin-top:2px}
+  .pill{display:flex;align-items:center;gap:9px;background:var(--surf);border:1px solid var(--line);border-radius:999px;padding:9px 16px;box-shadow:var(--card-sh)}
+  .pill .dot{width:11px;height:11px;border-radius:50%}
+  .clock{font-size:22px;font-weight:700;color:var(--text2);font-variant-numeric:tabular-nums}
+  .grid-wrap{flex:1;overflow:auto;padding:10px 30px 20px}
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:20px}
+  @media(orientation:portrait){.grid{grid-template-columns:repeat(auto-fill,minmax(180px,1fr))}}
+  .card{background:var(--surf);border:1px solid var(--line);border-radius:22px;padding:16px;box-shadow:var(--card-sh);
+        cursor:pointer;transition:transform .18s,box-shadow .25s;position:relative}
+  .card:active{transform:scale(.955)}
+  .card.oos{opacity:.62;cursor:not-allowed}
+  .card .ped{position:relative;aspect-ratio:1.12/1;border-radius:16px;background:var(--ped);box-shadow:var(--ped-inner);display:grid;place-items:center;overflow:hidden}
+  .card .ped img{width:100%;height:100%;object-fit:contain}
+  .card .ph{width:58%;height:76%;border-radius:12px;border:1.5px dashed var(--line);background:repeating-linear-gradient(45deg,transparent 0 9px,rgba(128,128,128,.09) 9px 18px);display:grid;place-items:center}
+  .card .ph span{font-family:ui-monospace,Menlo,monospace;font-size:11px;color:var(--text2)}
+  .card .shadow{position:absolute;left:12%;right:12%;bottom:7px;height:10px;border-radius:50%;background:radial-gradient(ellipse,rgba(0,0,0,.22),transparent 70%)}
+  .card .oosbadge{position:absolute;inset:0;display:grid;place-items:center;background:var(--glass);backdrop-filter:blur(3px)}
+  .card .oosbadge span{font-size:15px;font-weight:800;color:#D14343;background:var(--surf);border:1px solid var(--line);border-radius:999px;padding:8px 16px}
+  .card .name{margin-top:14px;font-size:20px;font-weight:700;line-height:1.25;min-height:2.5em}
+  .card .row{display:flex;align-items:center;justify-content:space-between;margin-top:8px}
+  .card .price{font-size:30px;font-weight:800;color:var(--accent2);letter-spacing:-.5px}
+  .card .slot{font-size:13px;font-weight:700;color:var(--text2);background:var(--bg);border:1px solid var(--line);border-radius:999px;padding:5px 11px}
+  .foot{flex:none;text-align:center;padding:14px;font-size:17px;font-weight:600;color:var(--text2);border-top:1px solid var(--line)}
+  .overlay{position:fixed;inset:0;z-index:10;display:flex;align-items:center;justify-content:center;padding:30px}
+  .ov-pay{background:var(--glass);backdrop-filter:blur(22px);-webkit-backdrop-filter:blur(22px);animation:fadeup .35s ease}
+  .ov-full{background:var(--bg);flex-direction:column;gap:26px;text-align:center;animation:fadeup .3s ease}
+  .pay-box{display:flex;flex-direction:column;align-items:center;gap:14px;max-width:560px;width:100%}
+  .pay-name{font-size:24px;font-weight:700;color:var(--text2)}
+  .pay-price{font-size:64px;font-weight:800;color:var(--accent2);letter-spacing:-2px;line-height:1}
+  .qr{background:#FFFFFF;border-radius:24px;padding:22px;box-shadow:0 6px 16px rgba(17,17,17,.10),0 30px 60px rgba(17,17,17,.22);margin-top:6px}
+  .qr img{display:block;width:256px;height:256px;border-radius:6px;image-rendering:pixelated}
+  .pay-hint{font-size:20px;font-weight:600;text-align:center;max-width:420px;line-height:1.45}
+  .timer{display:flex;align-items:center;gap:10px;background:rgba(224,164,0,.14);border:1px solid rgba(224,164,0,.35);border-radius:999px;padding:10px 20px}
+  .timer .d{width:10px;height:10px;border-radius:50%;background:#E0A400;animation:softpulse 1.6s infinite}
+  .timer .t{font-size:19px;font-weight:800;color:#E0A400;font-variant-numeric:tabular-nums}
+  .btn-ghost{font-family:inherit;font-size:21px;font-weight:700;color:var(--text);background:var(--surf);border:1.5px solid var(--line);border-radius:18px;padding:18px 60px;cursor:pointer;box-shadow:var(--card-sh);transition:transform .15s}
+  .btn-ghost:active{transform:scale(.96)}
+  .btn-accent{font-family:inherit;font-size:20px;font-weight:700;color:#fff;background:linear-gradient(160deg,#A03050,#8B253B);border:none;border-radius:18px;padding:18px 54px;cursor:pointer;box-shadow:var(--btn-sh)}
+  .btn-accent:active{transform:scale(.96)}
+  .spinner{width:104px;height:104px;border-radius:50%;border:8px solid var(--line);border-top-color:var(--accent2);animation:spin 1s linear infinite}
+  .big-title{font-size:42px;font-weight:800;text-align:center;line-height:1.2}
+  .big-sub{font-size:25px;font-weight:600;color:var(--text2)}
+  .badge-ok{width:170px;height:170px;border-radius:50%;background:radial-gradient(circle at 32% 28%,#3CBF72,#2E9E5B);box-shadow:0 24px 60px rgba(46,158,91,.4),inset 0 2px 0 rgba(255,255,255,.35);display:grid;place-items:center;animation:pop .5s cubic-bezier(.2,1.4,.4,1)}
+  .badge-err{width:170px;height:170px;border-radius:50%;background:radial-gradient(circle at 32% 28%,#E05B5B,#D14343);box-shadow:0 24px 60px rgba(209,67,67,.38),inset 0 2px 0 rgba(255,255,255,.3);display:grid;place-items:center;animation:pop .5s cubic-bezier(.2,1.4,.4,1)}
+  .badge-err span{font-size:92px;font-weight:800;color:#fff;line-height:1;margin-top:-8px}
+  .hidden{display:none!important}
 </style>
 </head>
 <body>
-<header>
-  <h1 id="machine-name">Vending</h1>
-  <span><span id="status-dot"></span></span>
-</header>
-
-<div id="catalog"></div>
-
-<div id="overlay">
-  <div id="pay-view">
-    <h2 id="pay-product"></h2>
-    <div class="amount" id="pay-amount"></div>
-    <img id="qr-img" alt="QR">
-    <div class="hint">Отсканируйте QR-код любым банковским приложением и подтвердите оплату</div>
-    <div id="timer"></div>
-    <button class="btn" onclick="cancelFlow()">Отмена</button>
+<div id="app">
+  <!-- K1 Каталог -->
+  <div class="hdr">
+    <div style="min-width:0">
+      <h1 id="m-name">Автомат</h1>
+      <div class="sub" id="m-loc"></div>
+    </div>
+    <div style="flex:1"></div>
+    <div class="pill"><span class="dot" id="on-dot"></span><span id="on-text" style="font-size:15px;font-weight:700">—</span></div>
+    <div class="clock" id="clock">—:—</div>
   </div>
-  <div id="result-view" style="display:none">
-    <div id="big-status"></div>
-    <div id="status-text"></div>
-    <button class="btn primary" id="done-btn" onclick="resetFlow()" style="display:none">Готово</button>
+  <div class="grid-wrap"><div class="grid" id="catalog"></div></div>
+  <div class="foot">Нажмите на товар, чтобы купить — оплата по QR-коду</div>
+</div>
+
+<!-- K2 Оплата -->
+<div id="ov-pay" class="overlay ov-pay hidden">
+  <div class="pay-box">
+    <div class="pay-name" id="pay-name"></div>
+    <div class="pay-price" id="pay-price"></div>
+    <div class="qr"><img id="qr-img" alt="QR"></div>
+    <div class="pay-hint">Отсканируйте QR-код любым банковским приложением</div>
+    <div class="timer"><span class="d"></span><span class="t" id="timer-t">2:00</span></div>
+    <button class="btn-ghost" onclick="resetFlow()">Отмена</button>
   </div>
 </div>
 
+<!-- K3 Выдача -->
+<div id="ov-disp" class="overlay ov-full hidden">
+  <div class="spinner"></div>
+  <div class="big-title">Оплата получена</div>
+  <div class="big-sub" style="animation:softpulse 1.8s infinite">Выдаём товар…</div>
+</div>
+
+<!-- K4 Успех -->
+<div id="ov-ok" class="overlay ov-full hidden">
+  <div class="badge-ok">
+    <svg width="92" height="92" viewBox="0 0 92 92"><path d="M22 48 L40 66 L72 28" fill="none" stroke="#fff" stroke-width="10" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="90" stroke-dashoffset="90" style="animation:checkdraw .5s .25s ease forwards"></path></svg>
+  </div>
+  <div class="big-title">Заберите товар</div>
+  <div class="big-sub">Спасибо за покупку!</div>
+</div>
+
+<!-- K5 Ошибка / возврат -->
+<div id="ov-err" class="overlay ov-full hidden" style="padding:40px">
+  <div class="badge-err"><span>!</span></div>
+  <div class="big-title">Не удалось выдать товар</div>
+  <div class="big-sub" style="max-width:560px;line-height:1.5">Деньги вернутся автоматически — ничего делать не нужно</div>
+</div>
+
+<!-- K6 Недоступен -->
+<div id="ov-off" class="overlay ov-full hidden" style="padding:40px">
+  <div style="width:150px;height:150px;border-radius:38px;background:var(--ped);box-shadow:var(--card-sh),var(--ped-inner);display:flex;align-items:center;justify-content:center;gap:14px">
+    <span style="width:16px;height:56px;border-radius:8px;background:var(--text2)"></span>
+    <span style="width:16px;height:56px;border-radius:8px;background:var(--text2)"></span>
+  </div>
+  <div class="big-title">Автомат временно не&nbsp;работает</div>
+  <div class="big-sub" style="max-width:540px;line-height:1.5">Приносим извинения. Мы уже знаем о проблеме и скоро всё починим</div>
+</div>
+
 <script>
-const machineId = location.pathname.split('/').pop();
-let session = null, pollTimer = null, countdownTimer = null, ws = null;
+const machineId = decodeURIComponent(location.pathname.split('/').filter(Boolean).pop() || '');
+const params = new URLSearchParams(location.search);
+
+// Тема: ?theme=dark|light, иначе системная prefers-color-scheme
+function applyTheme() {
+  const forced = params.get('theme');
+  const dark = forced ? forced === 'dark'
+    : window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+  document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light');
+}
+applyTheme();
+if (window.matchMedia) window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', applyTheme);
+
+let session = null, pollTimer = null, countdownTimer = null, ws = null, machineOnline = false;
+const PAY_SECONDS = 120;
+
+function fmtPrice(v) { return (v % 1 ? v.toFixed(2).replace('.', ',') : v) + ' c.'; }
+function el(id) { return document.getElementById(id); }
+function show(id) { el(id).classList.remove('hidden'); }
+function hideAll() { ['ov-pay','ov-disp','ov-ok','ov-err','ov-off'].forEach(i => el(i).classList.add('hidden')); }
+
+function tickClock() {
+  const d = new Date();
+  el('clock').textContent = String(d.getHours()).padStart(2,'0') + ':' + String(d.getMinutes()).padStart(2,'0');
+}
+tickClock(); setInterval(tickClock, 10000);
 
 async function loadCatalog() {
   try {
-    const r = await fetch(`/api/kiosk/${machineId}/products`);
+    const r = await fetch(`/api/kiosk/${encodeURIComponent(machineId)}/products`);
     if (!r.ok) throw 0;
     const data = await r.json();
-    document.getElementById('machine-name').textContent = data.name || 'Vending';
-    document.getElementById('status-dot').classList.toggle('online', data.online);
-    const cat = document.getElementById('catalog');
+    el('m-name').textContent = data.name || 'Автомат';
+    el('m-loc').textContent = data.location || '';
+    machineOnline = data.online;
+    el('on-dot').style.background = data.online ? '#2E9E5B' : '#D14343';
+    el('on-dot').style.animation = (data.online ? 'glowdot' : 'glowdotred') + ' 2s infinite';
+    el('on-text').textContent = data.online ? 'Онлайн' : 'Офлайн';
+
+    const cat = el('catalog');
     cat.innerHTML = '';
     for (const p of data.products) {
       const div = document.createElement('div');
-      div.className = 'product' + (p.available ? '' : ' out');
+      div.className = 'card' + (p.available ? '' : ' oos');
+      const media = p.image_url
+        ? `<img src="${p.image_url}" alt="">`
+        : `<div class="ph"><span>фото товара</span></div><div class="shadow"></div>`;
       div.innerHTML = `
-        ${p.image_url ? `<img src="${p.image_url}">` : `<div class="noimg">🥤</div>`}
-        <h3>${p.name}</h3>
-        <div class="price">${p.price.toFixed(2)}</div>
-        <div class="slot">Слот ${p.slot_id}${p.available ? '' : ' · нет в наличии'}</div>`;
-      div.onclick = () => buy(p);
+        <div class="ped">${media}
+          ${p.available ? '' : '<div class="oosbadge"><span>Нет в наличии</span></div>'}
+        </div>
+        <div class="name">${p.name}</div>
+        <div class="row">
+          <span class="price">${fmtPrice(p.price)}</span>
+          <span class="slot">Слот ${p.slot_id}</span>
+        </div>`;
+      if (p.available) div.onclick = () => buy(p);
       cat.appendChild(div);
     }
   } catch (e) { /* сервер недоступен — покажем при следующем цикле */ }
@@ -97,94 +198,100 @@ async function loadCatalog() {
 
 async function buy(p) {
   if (session) return;
-  const r = await fetch(`/api/kiosk/${machineId}/buy`, {
-    method: 'POST',
-    headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({slot_id: p.slot_id}),
-  });
+  let r;
+  try {
+    r = await fetch(`/api/kiosk/${encodeURIComponent(machineId)}/buy`, {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({slot_id: p.slot_id}),
+    });
+  } catch (e) { showError('Нет связи с сервером'); return; }
   if (!r.ok) {
-    const err = r.status === 503 ? 'Автомат временно недоступен' :
-                r.status === 409 ? 'Товар закончился' : 'Ошибка, попробуйте позже';
-    showResult('⚠️', err, true);
-    document.getElementById('overlay').classList.add('show');
+    if (r.status === 503) { showOffline(); }
+    else { showError(r.status === 409 ? 'Товар закончился' : 'Ошибка, попробуйте позже'); }
     return;
   }
   session = await r.json();
-  document.getElementById('pay-product').textContent = session.product;
-  document.getElementById('pay-amount').textContent = session.amount.toFixed(2);
-  document.getElementById('qr-img').src = session.qr_url;
-  document.getElementById('pay-view').style.display = '';
-  document.getElementById('result-view').style.display = 'none';
-  document.getElementById('overlay').classList.add('show');
-  startCountdown(300);
-  pollTimer = setInterval(checkStatus, 2500);  // резерв на случай пропуска WS-события
+  el('pay-name').textContent = session.product;
+  el('pay-price').textContent = fmtPrice(session.amount);
+  el('qr-img').src = session.qr_url;
+  hideAll(); show('ov-pay');
+  startCountdown(PAY_SECONDS);
+  pollTimer = setInterval(checkStatus, 2500);
 }
 
 function startCountdown(sec) {
-  const el = document.getElementById('timer');
-  countdownTimer = setInterval(() => {
-    sec--;
-    el.textContent = `Ожидание оплаты: ${Math.floor(sec/60)}:${String(sec%60).padStart(2,'0')}`;
+  clearInterval(countdownTimer);
+  const upd = () => {
+    el('timer-t').textContent = Math.floor(sec/60) + ':' + String(sec%60).padStart(2,'0');
     if (sec <= 0) resetFlow();
-  }, 1000);
+    sec--;
+  };
+  upd();
+  countdownTimer = setInterval(upd, 1000);
 }
 
 async function checkStatus() {
   if (!session) return;
-  const r = await fetch(`/api/kiosk/session/${session.session_id}`);
-  if (!r.ok) return;
-  handleStatus((await r.json()).status);
+  try {
+    const r = await fetch(`/api/kiosk/session/${session.session_id}`);
+    if (!r.ok) return;
+    handleStatus((await r.json()).status);
+  } catch (e) {}
 }
 
 function handleStatus(status) {
+  if (!session) return;
   if (status === 'paid' || status === 'dispensing') {
-    showResult('⏳', 'Оплата получена. Выдаём товар…', false);
+    clearInterval(countdownTimer); hideAll(); show('ov-disp');
   } else if (status === 'dispensed') {
-    showResult('✅', 'Заберите товар. Спасибо за покупку!', true);
-    setTimeout(resetFlow, 8000);
+    clearInterval(countdownTimer); clearInterval(pollTimer);
+    hideAll(); show('ov-ok'); setTimeout(resetFlow, 8000);
   } else if (status === 'refund_pending' || status === 'refunded') {
-    showResult('↩️', 'Не удалось выдать товар.\nДеньги будут возвращены автоматически.', true);
-  } else if (status === 'expired') {
+    clearInterval(countdownTimer); clearInterval(pollTimer);
+    hideAll(); show('ov-err'); setTimeout(resetFlow, 9000);
+  } else if (status === 'expired' || status === 'failed') {
     resetFlow();
   }
 }
 
-function showResult(icon, text, showDone) {
-  clearInterval(countdownTimer);
-  document.getElementById('pay-view').style.display = 'none';
-  document.getElementById('result-view').style.display = '';
-  document.getElementById('big-status').textContent = icon;
-  document.getElementById('status-text').textContent = text;
-  document.getElementById('done-btn').style.display = showDone ? '' : 'none';
+function showError(msg) {
+  hideAll();
+  el('ov-err').querySelector('.big-title').textContent = 'Ошибка';
+  el('ov-err').querySelector('.big-sub').textContent = msg;
+  show('ov-err');
+  setTimeout(resetFlow, 5000);
 }
-
-function cancelFlow() { resetFlow(); }
+function showOffline() { hideAll(); show('ov-off'); setTimeout(resetFlow, 6000); }
 
 function resetFlow() {
   clearInterval(pollTimer); clearInterval(countdownTimer);
   session = null;
-  document.getElementById('overlay').classList.remove('show');
+  el('ov-err').querySelector('.big-title').textContent = 'Не удалось выдать товар';
+  el('ov-err').querySelector('.big-sub').textContent = 'Деньги вернутся автоматически — ничего делать не нужно';
+  hideAll();
   loadCatalog();
 }
 
 function connectWS() {
   const proto = location.protocol === 'https:' ? 'wss' : 'ws';
-  ws = new WebSocket(`${proto}://${location.host}/ws/kiosk/${machineId}`);
+  try { ws = new WebSocket(`${proto}://${location.host}/ws/kiosk/${encodeURIComponent(machineId)}`); }
+  catch (e) { setTimeout(connectWS, 3000); return; }
   ws.onmessage = (e) => {
-    const msg = JSON.parse(e.data);
-    if (msg.type === 'ping') { ws.send('{"type":"pong"}'); return; }
+    let msg; try { msg = JSON.parse(e.data); } catch { return; }
+    if (msg.type === 'ping') { try { ws.send('{"type":"pong"}'); } catch {} return; }
     if (!session || msg.session_id !== session.session_id) return;
     if (msg.type === 'paid') handleStatus('paid');
-    if (msg.type === 'dispensed') handleStatus('dispensed');
-    if (msg.type === 'refund_started' || msg.type === 'refunded') handleStatus('refund_pending');
-    if (msg.type === 'payment_timeout') resetFlow();
+    else if (msg.type === 'dispensed') handleStatus('dispensed');
+    else if (msg.type === 'refund_started' || msg.type === 'refunded' || msg.type === 'refund_failed') handleStatus('refund_pending');
+    else if (msg.type === 'payment_timeout') resetFlow();
   };
   ws.onclose = () => setTimeout(connectWS, 3000);
+  ws.onerror = () => { try { ws.close(); } catch {} };
 }
 
 loadCatalog();
 connectWS();
-setInterval(loadCatalog, 60000);  // обновление каталога/цен раз в минуту
+setInterval(loadCatalog, 60000);
 </script>
 </body>
 </html>

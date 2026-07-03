@@ -79,6 +79,7 @@ async def kiosk_products(machine_id: str, db: Session = Depends(get_db)):
     return {
         "machine_id": machine_id,
         "name": machine.name,
+        "location": machine.location,
         "online": machine_id in machine_clients,
         "products": [
             {

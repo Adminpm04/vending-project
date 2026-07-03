@@ -1,166 +1,609 @@
 <!DOCTYPE html>
 <html lang="ru">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Vending Admin</title>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Vending QR · Админка</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <style>
-  * { margin:0; padding:0; box-sizing:border-box; }
-  body { font-family:-apple-system,Roboto,Arial,sans-serif; background:#f4f6fa; color:#1a1d26; }
-  header { background:#1a1d26; color:#fff; padding:14px 22px; display:flex;
-           justify-content:space-between; align-items:center; }
-  header h1 { font-size:18px; }
-  header input { padding:7px 10px; border-radius:8px; border:0; width:260px; }
-  main { max-width:1100px; margin:0 auto; padding:20px; }
-  section { background:#fff; border-radius:14px; padding:18px; margin-bottom:18px;
-            box-shadow:0 1px 4px rgba(0,0,0,.06); }
-  h2 { font-size:16px; margin-bottom:12px; }
-  table { width:100%; border-collapse:collapse; font-size:14px; }
-  th, td { text-align:left; padding:8px 10px; border-bottom:1px solid #eef; }
-  th { color:#889; font-weight:600; font-size:12px; text-transform:uppercase; }
-  .dot { width:10px; height:10px; border-radius:50%; display:inline-block; background:#e74c3c; }
-  .dot.on { background:#2ecc71; }
-  .cards { display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:12px;
-           margin-bottom:18px; }
-  .card { background:#fff; border-radius:14px; padding:16px; box-shadow:0 1px 4px rgba(0,0,0,.06); }
-  .card .v { font-size:26px; font-weight:800; }
-  .card .l { font-size:12px; color:#889; margin-top:2px; }
-  button { background:#2563eb; color:#fff; border:0; padding:8px 14px; border-radius:8px;
-           cursor:pointer; font-size:13px; }
-  button.gray { background:#67718a; }
-  input, select { padding:7px 9px; border:1px solid #ccd; border-radius:7px; font-size:13px; }
-  .row { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:10px; }
-  .status-dispensed { color:#16a34a; } .status-refund_pending { color:#dc2626; font-weight:700; }
-  .status-refunded { color:#d97706; } .status-pending { color:#889; }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{height:100%}
+  body{margin:0;font-family:'Manrope',system-ui,sans-serif;-webkit-font-smoothing:antialiased;background:var(--bg);color:var(--text);transition:background .35s,color .35s}
+  input,select,button{font-family:inherit}
+  [data-theme="light"]{--bg:#F5F5F5;--surf:#FFFFFF;--text:#111111;--text2:#6B6B6B;--line:#E6E6E6;--accent:#8B253B;--accent2:#8B253B;--accsoft:rgba(139,37,59,.08);--glass:rgba(245,245,245,.7);--card-sh:0 2px 5px rgba(17,17,17,.04),0 12px 30px rgba(17,17,17,.08);--card-sh-h:0 6px 14px rgba(17,17,17,.07),0 22px 44px rgba(17,17,17,.14);--btn-sh:0 8px 22px rgba(139,37,59,.35),inset 0 1px 0 rgba(255,255,255,.22);--ped:linear-gradient(150deg,#FFFFFF,#EDEDED);--zebra:rgba(17,17,17,.028)}
+  [data-theme="dark"]{--bg:#111111;--surf:#1B1B1B;--text:#F5F5F5;--text2:#9A9A9A;--line:#2A2A2A;--accent:#8B253B;--accent2:#C24A63;--accsoft:rgba(194,74,99,.12);--glass:rgba(17,17,17,.7);--card-sh:0 2px 5px rgba(0,0,0,.4),0 12px 30px rgba(0,0,0,.45);--card-sh-h:0 6px 14px rgba(0,0,0,.5),0 22px 44px rgba(0,0,0,.55);--btn-sh:0 8px 24px rgba(139,37,59,.5),inset 0 1px 0 rgba(255,255,255,.14);--ped:linear-gradient(150deg,#242424,#181818);--zebra:rgba(245,245,245,.03)}
+  @keyframes glowdot{0%,100%{box-shadow:0 0 0 0 rgba(46,158,91,.55)}70%{box-shadow:0 0 0 7px rgba(46,158,91,0)}}
+  @keyframes glowdotred{0%,100%{box-shadow:0 0 0 0 rgba(209,67,67,.55)}70%{box-shadow:0 0 0 7px rgba(209,67,67,0)}}
+  @keyframes shimmer{0%{background-position:100% 0}100%{background-position:-100% 0}}
+  @keyframes fadeup{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  @keyframes toastin{from{opacity:0;transform:translate(-50%,14px)}to{opacity:1;transform:translate(-50%,0)}}
+  .hidden{display:none!important}
+  .brand-ic{border-radius:12px;background:linear-gradient(145deg,#A03050,#8B253B);box-shadow:0 8px 18px rgba(139,37,59,.4);display:grid;place-items:center;color:#fff;font-weight:800}
+  .btn-accent{font-weight:800;color:#fff;background:linear-gradient(160deg,#A03050,#8B253B);border:none;border-radius:13px;cursor:pointer;box-shadow:var(--btn-sh);transition:transform .15s}
+  .btn-accent:active{transform:scale(.96)}
+  .fld{font-size:14px;font-weight:700;color:var(--text);background:var(--bg);border:1.5px solid var(--line);border-radius:11px;padding:11px 13px;outline:none;transition:border-color .2s,box-shadow .2s}
+  .fld:focus{border-color:var(--accent2);box-shadow:0 0 0 4px var(--accsoft)}
+  .cardbox{background:var(--surf);border:1px solid var(--line);border-radius:20px;box-shadow:var(--card-sh)}
+
+  /* Layout */
+  #login{position:fixed;inset:0;z-index:40;background:var(--bg);display:flex;align-items:center;justify-content:center;padding:24px}
+  #shell{display:flex;height:100vh;min-height:0}
+  #side{flex:none;width:248px;display:flex;flex-direction:column;background:var(--surf);border-right:1px solid var(--line)}
+  #main{flex:1;display:flex;flex-direction:column;min-width:0}
+  #topbar{flex:none;display:flex;align-items:center;gap:12px;padding:16px 26px;background:var(--surf);border-bottom:1px solid var(--line)}
+  #content{flex:1;overflow:auto;padding:26px;min-height:0}
+  #bottomnav{display:none}
+  .nav-btn{display:flex;align-items:center;gap:11px;text-align:left;font-size:14px;font-weight:700;border:none;border-radius:13px;padding:12px 13px;cursor:pointer;transition:all .15s;width:100%;background:transparent;color:var(--text2)}
+  .nav-btn.active{background:linear-gradient(160deg,#A03050,#8B253B);color:#fff;box-shadow:0 8px 20px rgba(139,37,59,.35)}
+  .h1{font-size:26px;font-weight:800;line-height:1.15}
+  .sub{font-size:12.5px;font-weight:600;color:var(--text2)}
+  .toggle{font-weight:600;font-size:12.5px;color:var(--text);background:var(--bg);border:1px solid var(--line);border-radius:999px;padding:8px 14px;cursor:pointer;white-space:nowrap}
+  .avatar{border-radius:50%;background:linear-gradient(145deg,#A03050,#8B253B);color:#fff;display:grid;place-items:center;font-weight:800;box-shadow:0 6px 14px rgba(139,37,59,.35)}
+
+  .cards4{display:grid;grid-template-columns:repeat(4,1fr);gap:16px}
+  .metric{background:var(--surf);border:1px solid var(--line);border-radius:20px;padding:18px 20px;box-shadow:var(--card-sh);transition:transform .18s,box-shadow .25s}
+  .metric:hover{transform:translateY(-3px);box-shadow:var(--card-sh-h)}
+  .metric .top{display:flex;justify-content:space-between;align-items:center}
+  .metric .lbl{font-size:13px;font-weight:700;color:var(--text2)}
+  .metric .ic{width:34px;height:34px;border-radius:11px;background:var(--accsoft);color:var(--accent2);display:grid;place-items:center;font-weight:800;font-size:13px}
+  .metric .val{font-size:30px;font-weight:800;letter-spacing:-.5px;margin-top:10px}
+  .grid-dash{display:grid;grid-template-columns:1.55fr 1fr;gap:18px;align-items:start}
+  .cards-pts{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+  .cards-prod{display:grid;grid-template-columns:repeat(4,1fr);gap:16px}
+  .pt-card{background:var(--surf);border:1px solid var(--line);border-radius:20px;padding:18px 20px;box-shadow:var(--card-sh);cursor:pointer;transition:transform .18s,box-shadow .25s}
+  .pt-card:hover{transform:translateY(-3px);box-shadow:var(--card-sh-h)}
+  .mini{flex:1;background:var(--bg);border:1px solid var(--line);border-radius:12px;padding:9px 12px}
+  .mini .k{font-size:11px;font-weight:700;color:var(--text2)}
+  .tbl-wrap{background:var(--surf);border:1px solid var(--line);border-radius:20px;box-shadow:var(--card-sh);overflow:hidden}
+  .seg{display:flex;gap:4px;background:var(--surf);border:1px solid var(--line);border-radius:12px;padding:4px}
+  .seg button{font-size:12.5px;font-weight:800;border:none;border-radius:9px;padding:8px 14px;cursor:pointer;transition:all .15s;background:transparent;color:var(--text2)}
+  .seg button.active{background:linear-gradient(160deg,#A03050,#8B253B);color:#fff;box-shadow:0 4px 12px rgba(139,37,59,.35)}
+  #toast{position:fixed;left:50%;bottom:26px;transform:translateX(-50%);z-index:80;background:rgba(17,17,17,.92);color:#F5F5F5;font-size:13.5px;font-weight:700;border-radius:999px;padding:12px 22px;box-shadow:0 16px 40px rgba(0,0,0,.35);backdrop-filter:blur(8px);animation:toastin .25s ease;white-space:nowrap}
+
+  @media(max-width:900px){
+    #side{display:none}
+    #topbar{padding:14px 16px}
+    #content{padding:16px 16px 84px}
+    #bottomnav{display:flex;position:fixed;left:0;right:0;bottom:0;z-index:30;border-top:1px solid var(--line);background:var(--surf);padding:8px 6px 10px}
+    .bn-btn{flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;border:none;background:transparent;border-radius:12px;padding:7px 2px;cursor:pointer;color:var(--text2)}
+    .bn-btn.active{color:var(--accent2)}
+    .cards4{grid-template-columns:repeat(2,1fr)}
+    .grid-dash{grid-template-columns:1fr}
+    .cards-pts{grid-template-columns:1fr}
+    .cards-prod{grid-template-columns:repeat(2,1fr)}
+    .h1{font-size:21px}
+  }
 </style>
 </head>
 <body>
-<header>
-  <h1>Vending — Админка</h1>
-  <input type="password" id="token" placeholder="Admin token" onchange="saveToken()">
-</header>
-<main>
-  <div class="cards" id="stat-cards"></div>
 
-  <section>
-    <h2>Точки</h2>
-    <div class="row">
-      <input id="new-mid" placeholder="machine_id (VND-001)">
-      <input id="new-name" placeholder="Название">
-      <input id="new-loc" placeholder="Локация">
-      <button onclick="addMachine()">Добавить точку</button>
+<!-- A0 Вход -->
+<div id="login">
+  <button class="toggle" id="login-theme" onclick="toggleTheme()" style="position:absolute;top:18px;right:18px;background:var(--surf);box-shadow:var(--card-sh)">◐ Тема</button>
+  <div class="cardbox" style="width:440px;max-width:100%;border-radius:24px;box-shadow:var(--card-sh-h);padding:40px 36px;display:flex;flex-direction:column;align-items:center;gap:8px;animation:fadeup .4s ease">
+    <div class="brand-ic" style="width:64px;height:64px;border-radius:18px;font-size:24px">VQ</div>
+    <div style="font-size:26px;font-weight:800;margin-top:10px">Vending QR</div>
+    <div class="sub">Панель управления сетью автоматов</div>
+    <div style="width:100%;margin-top:22px;display:flex;flex-direction:column;gap:8px">
+      <label style="font-size:13px;font-weight:700;color:var(--text2)">Токен доступа</label>
+      <input id="login-token" type="password" class="fld" placeholder="••••••••••••" style="font-size:16px;padding:15px 16px;border-radius:14px" onkeydown="if(event.key==='Enter')login()">
     </div>
-    <table id="machines"><thead><tr>
-      <th></th><th>ID</th><th>Название</th><th>Локация</th><th></th>
-    </tr></thead><tbody></tbody></table>
-  </section>
+    <button class="btn-accent" style="width:100%;margin-top:14px;font-size:16px;padding:16px;border-radius:14px" onclick="login()">Войти</button>
+    <div id="login-err" style="font-size:12.5px;color:#D14343;font-weight:700;margin-top:10px;min-height:16px"></div>
+  </div>
+</div>
 
-  <section id="slots-section" style="display:none">
-    <h2>Слоты: <span id="slots-mid"></span></h2>
-    <div class="row">
-      <input id="slot-id" placeholder="Слот №" type="number" style="width:80px">
-      <input id="slot-name" placeholder="Товар">
-      <input id="slot-price" placeholder="Цена" type="number" step="0.01" style="width:90px">
-      <input id="slot-stock" placeholder="Остаток" type="number" style="width:90px">
-      <button onclick="saveSlot()">Сохранить слот</button>
+<!-- Приложение -->
+<div id="shell" class="hidden">
+  <div id="side">
+    <div style="display:flex;align-items:center;gap:11px;padding:22px 20px 18px">
+      <div class="brand-ic" style="width:40px;height:40px;font-size:16px">VQ</div>
+      <div><div style="font-size:16px;font-weight:800;line-height:1.1">Vending QR</div><div class="sub">сеть автоматов</div></div>
     </div>
-    <table id="slots"><thead><tr>
-      <th>Слот</th><th>Товар</th><th>Цена</th><th>Остаток</th><th>Активен</th>
-    </tr></thead><tbody></tbody></table>
-  </section>
+    <div id="nav" style="display:flex;flex-direction:column;gap:4px;padding:8px 12px;flex:1"></div>
+    <div style="padding:14px;border-top:1px solid var(--line);display:flex;align-items:center;gap:10px">
+      <div style="width:38px;height:38px;border-radius:50%;background:var(--accsoft);color:var(--accent2);display:grid;place-items:center;font-weight:800;font-size:13px">VQ</div>
+      <div style="flex:1;min-width:0"><div style="font-size:13.5px;font-weight:700">Оператор</div><div class="sub">Владелец сети</div></div>
+      <button onclick="logout()" title="Выйти" style="border:none;background:transparent;color:var(--text2);font-size:16px;cursor:pointer">⏻</button>
+    </div>
+  </div>
 
-  <section>
-    <h2>Последние сессии</h2>
-    <table id="sessions"><thead><tr>
-      <th>ID</th><th>Точка</th><th>Слот</th><th>Товар</th><th>Сумма</th><th>Статус</th>
-      <th>Телефон</th><th>Ошибка</th><th>Время</th><th></th>
-    </tr></thead><tbody></tbody></table>
-  </section>
-</main>
+  <div id="main">
+    <div id="topbar">
+      <div style="min-width:0"><div class="h1" id="tab-title">Дашборд</div><div class="sub" id="tab-sub"></div></div>
+      <div style="flex:1"></div>
+      <button class="toggle" onclick="toggleTheme()">◐ Тема</button>
+      <div class="avatar" style="width:36px;height:36px;font-size:12.5px">VQ</div>
+    </div>
+    <div id="content"></div>
+    <div id="bottomnav"></div>
+  </div>
+</div>
 
 <script>
-let TOKEN = localStorage.getItem('admin_token') || '';
-document.getElementById('token').value = TOKEN;
-function saveToken() {
-  TOKEN = document.getElementById('token').value;
-  localStorage.setItem('admin_token', TOKEN);
-  refresh();
+// ── Тема ──
+function initTheme(){
+  const t = localStorage.getItem('vq_theme') || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark':'light');
+  document.documentElement.setAttribute('data-theme', t);
 }
-const H = () => ({'Content-Type':'application/json','X-Admin-Token':TOKEN});
-let currentMid = null;
-
-async function api(path, opts={}) {
-  const r = await fetch(path, {...opts, headers:{...H(), ...(opts.headers||{})}});
-  if (r.status === 401) { alert('Неверный admin token'); throw 0; }
-  return r.json();
+function toggleTheme(){
+  const cur = document.documentElement.getAttribute('data-theme');
+  const t = cur === 'dark' ? 'light':'dark';
+  document.documentElement.setAttribute('data-theme', t);
+  localStorage.setItem('vq_theme', t);
 }
+initTheme();
 
-async function refresh() {
-  if (!TOKEN) return;
-  const [stats, machines, sessions] = await Promise.all([
-    api('/api/admin/stats'), api('/api/admin/machines'), api('/api/admin/sessions'),
-  ]);
+// ── Состояние ──
+let TOKEN = localStorage.getItem('vq_admin_token') || '';
+const S = { tab:'dash', pointId:null, machines:[], stats:null, sessions:[], slots:[],
+            fpt:'all', fst:'all', fday:'all', fq:'', blist:[] };
 
-  document.getElementById('stat-cards').innerHTML = `
-    <div class="card"><div class="v">${stats.total_revenue.toFixed(2)}</div><div class="l">Выручка сегодня</div></div>
-    <div class="card"><div class="v">${stats.by_machine.reduce((a,m)=>a+m.sales,0)}</div><div class="l">Продаж сегодня</div></div>
-    <div class="card"><div class="v">${stats.machines_online}</div><div class="l">Точек онлайн</div></div>
-    <div class="card"><div class="v">${stats.refunds_today}</div><div class="l">Возвратов сегодня</div></div>`;
+const NAV = [['dash','Дашборд','▦'],['pts','Точки','◉'],['sess','Сессии','≣'],['prod','Товары','▤'],['stat','Статистика','∿'],['set','Настройки','⚙']];
+const BN  = [['dash','Дашборд','▦'],['pts','Точки','◉'],['sess','Сессии','≣'],['prod','Товары','▤'],['set','Ещё','⋯']];
+const TAB_META = {
+  dash:['Дашборд','Обзор сети за сегодня'], pts:['Точки','Автоматы вашей сети'],
+  point:['Точка','Слоты и товары автомата'], sess:['Сессии','История покупок и возвратов'],
+  prod:['Товары','Общий каталог сети'], stat:['Статистика','Аналитика продаж'],
+  set:['Настройки','Внешний вид, уведомления, доступы']
+};
+const STMAP = {
+  pending:['Ожидание','#E0A400'], paid:['Оплачено','#2E9E5B'], dispensing:['Выдаётся','#E0A400'],
+  dispensed:['Выдано','#2E9E5B'], refund_pending:['Возврат','#D14343'], refunded:['Возвращено','#9A9A9A'],
+  expired:['Истекло','#9A9A9A'], failed:['Ошибка','#D14343']
+};
 
-  document.querySelector('#machines tbody').innerHTML = machines.map(m => `
-    <tr><td><span class="dot ${m.online?'on':''}"></span></td>
-    <td>${m.machine_id}</td><td>${m.name||''}</td><td>${m.location||''}</td>
-    <td><button class="gray" onclick="showSlots('${m.machine_id}')">Слоты</button></td></tr>`).join('');
-
-  document.querySelector('#sessions tbody').innerHTML = sessions.map(s => `
-    <tr><td>${s.id}</td><td>${s.machine_id}</td><td>${s.slot_id}</td>
-    <td>${s.product_name||''}</td><td>${s.amount}</td>
-    <td class="status-${s.status}">${s.status}</td>
-    <td>${s.phone_number||''}</td><td>${s.error||''}</td>
-    <td>${new Date(s.created_at+'Z').toLocaleString('ru')}</td>
-    <td>${s.status==='refund_pending' ? `<button onclick="retryRefund(${s.id})">Повторить возврат</button>` : ''}</td>
-    </tr>`).join('');
-
-  if (currentMid) showSlots(currentMid);
+// ── Утилиты ──
+function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+function fmt(v){ return String(Math.round(v||0)).replace(/\B(?=(\d{3})+(?!\d))/g,' ') + ' c.'; }
+function chip(status){
+  const [t,c] = STMAP[status] || [status,'#9A9A9A'];
+  return `<span style="display:inline-flex;align-items:center;gap:6px;font-size:11.5px;font-weight:800;color:${c};background:${c}1f;border-radius:999px;padding:6px 11px;white-space:nowrap;border:1px solid ${c}55">${t}</span>`;
 }
+function timeOf(iso){ if(!iso) return '—'; const d=new Date(iso+ (iso.endsWith('Z')?'':'Z')); return String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0'); }
+function dateKey(iso){ const d=new Date(iso+(iso.endsWith('Z')?'':'Z')); return d.toISOString().slice(0,10); }
+let toastT;
+function toast(msg){ let e=document.getElementById('toast'); if(e) e.remove();
+  e=document.createElement('div'); e.id='toast'; e.textContent=msg; document.body.appendChild(e);
+  clearTimeout(toastT); toastT=setTimeout(()=>e.remove(),2600); }
 
-async function addMachine() {
-  const machine_id = document.getElementById('new-mid').value.trim();
-  if (!machine_id) return;
-  const r = await api('/api/admin/machines', {method:'POST', body:JSON.stringify({
-    machine_id, name:document.getElementById('new-name').value,
-    location:document.getElementById('new-loc').value})});
-  alert(`Точка создана.\n\nТокен контроллера (сохраните, показывается один раз):\n\n${r.secret_token}`);
-  refresh();
+async function api(path, opts={}){
+  const r = await fetch(path, {...opts, headers:{'Content-Type':'application/json','X-Admin-Token':TOKEN, ...(opts.headers||{})}});
+  if(r.status===401){ logout(); throw new Error('unauthorized'); }
+  if(!r.ok) throw new Error('http '+r.status);
+  const ct=r.headers.get('content-type')||''; return ct.includes('json')? r.json(): r.text();
 }
 
-async function showSlots(mid) {
-  currentMid = mid;
-  document.getElementById('slots-section').style.display = '';
-  document.getElementById('slots-mid').textContent = mid;
-  const slots = await api(`/api/admin/machines/${mid}/slots`);
-  document.querySelector('#slots tbody').innerHTML = slots.map(s => `
-    <tr><td>${s.slot_id}</td><td>${s.product_name}</td><td>${s.price}</td>
-    <td>${s.stock_qty}/${s.capacity}</td><td>${s.is_active?'✓':'—'}</td></tr>`).join('');
+// ── Аутентификация ──
+async function login(){
+  TOKEN = document.getElementById('login-token').value.trim();
+  if(!TOKEN){ return; }
+  try{
+    await api('/api/admin/stats');
+    localStorage.setItem('vq_admin_token', TOKEN);
+    document.getElementById('login').classList.add('hidden');
+    document.getElementById('shell').classList.remove('hidden');
+    buildNav(); go('dash'); startAutoRefresh();
+  }catch(e){
+    document.getElementById('login-err').textContent = 'Неверный токен доступа';
+  }
+}
+function logout(){
+  TOKEN=''; localStorage.removeItem('vq_admin_token');
+  document.getElementById('shell').classList.add('hidden');
+  document.getElementById('login').classList.remove('hidden');
+  document.getElementById('login-err').textContent='';
 }
 
-async function saveSlot() {
-  if (!currentMid) return;
-  await api(`/api/admin/machines/${currentMid}/slots`, {method:'POST', body:JSON.stringify({
-    slot_id:+document.getElementById('slot-id').value,
-    product_name:document.getElementById('slot-name').value,
-    price:+document.getElementById('slot-price').value,
-    stock_qty:+document.getElementById('slot-stock').value})});
-  showSlots(currentMid);
+// ── Навигация ──
+function buildNav(){
+  document.getElementById('nav').innerHTML = NAV.map(([id,label,icon])=>
+    `<button class="nav-btn" data-nav="${id}" onclick="go('${id}')"><span style="width:22px;text-align:center;font-size:15px">${icon}</span><span>${label}</span></button>`).join('');
+  document.getElementById('bottomnav').innerHTML = BN.map(([id,label,icon])=>
+    `<button class="bn-btn" data-bn="${id}" onclick="go('${id==='set'?'set':id}')"><span style="font-size:17px;line-height:1">${icon}</span><span style="font-size:10px;font-weight:800">${label}</span></button>`).join('');
+}
+function markNav(){
+  const active = S.tab==='point'?'pts':S.tab;
+  document.querySelectorAll('[data-nav]').forEach(b=>b.classList.toggle('active', b.dataset.nav===active));
+  const bnActive = (S.tab==='stat'||S.tab==='set')?'set':active;
+  document.querySelectorAll('[data-bn]').forEach(b=>b.classList.toggle('active', b.dataset.bn===bnActive));
+}
+function go(tab){
+  S.tab = tab;
+  const [t,s] = TAB_META[tab]||['',''];
+  document.getElementById('tab-title').textContent = t;
+  document.getElementById('tab-sub').textContent = s;
+  markNav();
+  render();
 }
 
-async function retryRefund(id) {
-  await api(`/api/admin/sessions/${id}/retry-refund`, {method:'POST'});
-  setTimeout(refresh, 1500);
+// ── Загрузка данных ──
+async function refreshCore(){
+  try{
+    const [stats, machines, sessions] = await Promise.all([
+      api('/api/admin/stats'), api('/api/admin/machines'), api('/api/admin/sessions')
+    ]);
+    S.stats=stats; S.machines=machines; S.sessions=sessions;
+  }catch(e){}
+}
+let autoT;
+function startAutoRefresh(){ clearInterval(autoT); refreshCore().then(render); autoT=setInterval(()=>refreshCore().then(render),15000); }
+
+function statOf(mid){ return (S.stats?.by_machine||[]).find(m=>m.machine_id===mid) || {sales:0,revenue:0}; }
+
+// ── Рендер ──
+function render(){
+  const c = document.getElementById('content');
+  if(S.tab==='dash') c.innerHTML = viewDash();
+  else if(S.tab==='pts') c.innerHTML = viewPts();
+  else if(S.tab==='point') viewPoint(c);
+  else if(S.tab==='sess') c.innerHTML = viewSess();
+  else if(S.tab==='prod') viewProd(c);
+  else if(S.tab==='stat') c.innerHTML = viewStat();
+  else if(S.tab==='set') c.innerHTML = viewSet();
 }
 
-refresh();
-setInterval(refresh, 15000);
+function loadingBlock(){
+  return `<div style="display:flex;align-items:center;gap:10px;justify-content:center;color:var(--text2);font-size:13px;font-weight:600;padding:40px">
+    <span style="width:14px;height:14px;border-radius:50%;border:2.5px solid var(--line);border-top-color:var(--accent2);animation:spin 1s linear infinite;display:inline-block"></span>Загружаем данные…</div>`;
+}
+function emptyBlock(title,desc){
+  return `<div style="height:60vh;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;text-align:center;animation:fadeup .35s ease">
+    <div style="width:108px;height:108px;border-radius:32px;background:var(--ped);border:1.5px dashed var(--line);box-shadow:var(--card-sh);display:grid;place-items:center">
+      <div style="width:44px;height:44px;border-radius:50%;border:3px dashed var(--text2);opacity:.5"></div></div>
+    <div style="font-size:21px;font-weight:800">${title}</div>
+    <div style="font-size:14px;font-weight:500;color:var(--text2);max-width:380px;line-height:1.55">${desc}</div></div>`;
+}
+
+// A1 Дашборд
+function viewDash(){
+  if(!S.stats) return loadingBlock();
+  const totalSales = (S.stats.by_machine||[]).reduce((a,m)=>a+m.sales,0);
+  const online = S.stats.machines_online, total = S.machines.length;
+  // график выручки 14 дней из sessions (dispensed)
+  const days=[]; const today=new Date();
+  for(let i=13;i>=0;i--){ const d=new Date(today); d.setDate(d.getDate()-i); days.push({key:d.toISOString().slice(0,10), label:String(d.getDate()), rev:0}); }
+  const dmap=Object.fromEntries(days.map(d=>[d.key,d]));
+  S.sessions.filter(s=>s.status==='dispensed').forEach(s=>{ const k=dateKey(s.created_at); if(dmap[k]) dmap[k].rev+=s.amount; });
+  const maxRev = Math.max(1,...days.map(d=>d.rev));
+  const bars = days.map(d=>{
+    const h=Math.max(4, Math.round(d.rev/maxRev*180));
+    return `<div title="${d.label}: ${fmt(d.rev)}" style="flex:1;display:flex;flex-direction:column;align-items:center;gap:7px;min-width:0">
+      <div style="width:100%;max-width:26px;height:${h}px;border-radius:7px 7px 3px 3px;background:linear-gradient(180deg,#A03050,#8B253B);transition:filter .15s"></div>
+      <span style="font-size:10.5px;font-weight:600;color:var(--text2)">${d.label}</span></div>`;
+  }).join('');
+  const total14 = days.reduce((a,d)=>a+d.rev,0);
+  const recent = S.sessions.slice(0,7).map(r=>{
+    const m=S.machines.find(x=>x.machine_id===r.machine_id);
+    return `<div style="display:flex;align-items:center;gap:11px;padding:11px 8px;border-radius:12px">
+      <span style="font-size:12px;font-weight:700;color:var(--text2);font-variant-numeric:tabular-nums;flex:none">${timeOf(r.created_at)}</span>
+      <div style="flex:1;min-width:0"><div style="font-size:13.5px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(r.product_name||'—')}</div>
+        <div class="sub">${esc(m?m.name||m.machine_id:r.machine_id)}</div></div>
+      <span style="font-size:14px;font-weight:800;color:var(--accent2);flex:none">${fmt(r.amount)}</span>${chip(r.status)}</div>`;
+  }).join('') || `<div class="sub" style="padding:14px">Пока нет продаж</div>`;
+
+  return `<div style="display:flex;flex-direction:column;gap:18px;animation:fadeup .35s ease">
+    <div class="cards4">
+      ${metric('Выручка сегодня', fmt(S.stats.total_revenue), 'c.', 'accsoft')}
+      ${metric('Продаж сегодня', totalSales, '▮', 'accsoft')}
+      ${metric('Точек онлайн', `${online} <span style="font-size:18px;color:var(--text2);font-weight:700">/ ${total}</span>`, '●', 'green')}
+      ${metric('Возвратов сегодня', S.stats.refunds_today, '↺', 'red')}
+    </div>
+    <div class="grid-dash">
+      <div class="cardbox" style="border-radius:22px;padding:22px">
+        <div style="display:flex;align-items:baseline;gap:10px"><span style="font-size:16px;font-weight:800">Выручка за 14 дней</span><span style="flex:1"></span><span class="sub">всего ${fmt(total14)}</span></div>
+        <div style="display:flex;align-items:flex-end;gap:6px;height:210px;margin-top:20px">${bars}</div>
+      </div>
+      <div class="cardbox" style="border-radius:22px;padding:22px">
+        <div style="display:flex;align-items:center"><span style="font-size:16px;font-weight:800">Последние продажи</span><span style="flex:1"></span><button onclick="go('sess')" style="border:none;background:transparent;color:var(--accent2);font-weight:700;font-size:13px;cursor:pointer">Все →</button></div>
+        <div style="display:flex;flex-direction:column;margin-top:10px">${recent}</div>
+      </div>
+    </div>
+  </div>`;
+}
+function metric(lbl,val,icon,kind){
+  const ic = kind==='green'?`<span class="ic" style="background:rgba(46,158,91,.12)"><i style="width:11px;height:11px;border-radius:50%;background:#2E9E5B;display:block;animation:glowdot 2s infinite"></i></span>`
+    : kind==='red'?`<span class="ic" style="background:rgba(209,67,67,.12);color:#D14343">${icon}</span>`
+    : `<span class="ic">${icon}</span>`;
+  return `<div class="metric"><div class="top"><span class="lbl">${lbl}</span>${ic}</div><div class="val">${val}</div></div>`;
+}
+
+// A2 Точки
+let ptsView='list';
+function viewPts(){
+  if(!S.machines.length) return `<div>${topAddPoint()}${emptyBlock('Пока нет точек','Добавьте первый автомат — задайте machine_id, название и локацию. Токен для контроллера покажется один раз.')}</div>`;
+  const cards = S.machines.map(m=>{
+    const st=statOf(m.machine_id); const dot=m.online?'#2E9E5B':'#D14343'; const anim=m.online?'glowdot':'glowdotred';
+    return `<div class="pt-card" onclick="openPoint('${esc(m.machine_id)}')">
+      <div style="display:flex;align-items:center;gap:9px">
+        <span style="width:10px;height:10px;border-radius:50%;background:${dot};animation:${anim} 2s infinite;flex:none"></span>
+        <span style="font-size:15.5px;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(m.name||m.machine_id)}</span>
+        <span style="flex:1"></span><span style="color:var(--text2);font-size:15px">›</span></div>
+      <div class="sub" style="margin:5px 0 14px 19px">${esc(m.location||m.machine_id)}</div>
+      <div style="display:flex;gap:8px">
+        <div class="mini"><div class="k">Выручка</div><div style="font-size:16px;font-weight:800;color:var(--accent2)">${fmt(st.revenue)}</div></div>
+        <div class="mini"><div class="k">Продаж</div><div style="font-size:16px;font-weight:800">${st.sales}</div></div>
+        <div class="mini"><div class="k">Статус</div><div style="font-size:13px;font-weight:800;color:${dot};margin-top:2px">${m.online?'Онлайн':'Офлайн'}</div></div>
+      </div></div>`;
+  }).join('');
+  const markers = S.machines.map((m,i)=>{
+    const h=hashPos(m.machine_id); const dot=m.online?'#2E9E5B':'#D14343'; const anim=m.online?'glowdot':'glowdotred';
+    return `<div onclick="openPoint('${esc(m.machine_id)}')" style="position:absolute;left:${h.x}%;top:${h.y}%;transform:translate(-50%,-50%);display:flex;align-items:center;gap:7px;cursor:pointer">
+      <span style="width:15px;height:15px;border-radius:50%;background:${dot};border:2.5px solid #fff;box-shadow:0 3px 8px rgba(0,0,0,.3);animation:${anim} 2s infinite;flex:none"></span>
+      <span style="font-size:11.5px;font-weight:800;background:var(--surf);border:1px solid var(--line);border-radius:999px;padding:4px 10px;box-shadow:var(--card-sh);white-space:nowrap">${esc(m.name||m.machine_id)}</span></div>`;
+  }).join('');
+  const onCount=S.machines.filter(m=>m.online).length, offCount=S.machines.length-onCount;
+  const map = `<div style="position:relative;height:520px;border-radius:22px;overflow:hidden;border:1px solid var(--line);box-shadow:var(--card-sh);background-color:var(--surf);background-image:linear-gradient(var(--line) 1px,transparent 1px),linear-gradient(90deg,var(--line) 1px,transparent 1px);background-size:72px 72px;background-position:center">
+    <div style="position:absolute;left:-10%;top:44%;width:120%;height:16px;background:var(--bg);border-top:1px solid var(--line);border-bottom:1px solid var(--line);transform:rotate(-7deg)"></div>
+    <div style="position:absolute;left:56%;top:-10%;width:16px;height:120%;background:var(--bg);border-left:1px solid var(--line);border-right:1px solid var(--line);transform:rotate(9deg)"></div>
+    ${markers}
+    <div style="position:absolute;left:14px;bottom:14px;display:flex;gap:12px;background:var(--glass);backdrop-filter:blur(10px);border:1px solid var(--line);border-radius:999px;padding:8px 16px;font-size:12px;font-weight:700">
+      <span style="display:flex;align-items:center;gap:6px"><i style="width:9px;height:9px;border-radius:50%;background:#2E9E5B;display:block"></i>Онлайн · ${onCount}</span>
+      <span style="display:flex;align-items:center;gap:6px"><i style="width:9px;height:9px;border-radius:50%;background:#D14343;display:block"></i>Офлайн · ${offCount}</span></div>
+    <div style="position:absolute;right:14px;top:14px;font-size:11.5px;font-weight:700;color:var(--text2);background:var(--glass);backdrop-filter:blur(10px);border:1px solid var(--line);border-radius:999px;padding:6px 13px">схема сети</div></div>`;
+  return `<div style="display:flex;flex-direction:column;gap:16px;animation:fadeup .35s ease">
+    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+      <div class="seg"><button class="${ptsView==='list'?'active':''}" onclick="ptsView='list';render()">Список</button><button class="${ptsView==='map'?'active':''}" onclick="ptsView='map';render()">Карта города</button></div>
+      <div style="flex:1"></div>
+      <button class="btn-accent" style="padding:12px 20px" onclick="addPoint()">+ Добавить точку</button>
+    </div>
+    ${ptsView==='list' ? `<div class="cards-pts">${cards}</div>` : map}
+  </div>`;
+}
+function topAddPoint(){ return `<div style="display:flex;justify-content:flex-end;margin-bottom:16px"><button class="btn-accent" style="padding:12px 20px" onclick="addPoint()">+ Добавить точку</button></div>`; }
+function hashPos(s){ let h=0; for(const c of s) h=(h*31+c.charCodeAt(0))&0xffff; return {x:12+(h%76), y:12+((h>>4)%70)}; }
+
+async function addPoint(){
+  const machine_id = prompt('ID автомата (например VND-002):'); if(!machine_id) return;
+  const name = prompt('Название (например №2 · ЦУМ):')||'';
+  const location = prompt('Локация:')||'';
+  try{
+    const r = await api('/api/admin/machines',{method:'POST',body:JSON.stringify({machine_id,name,location})});
+    await refreshCore(); render();
+    alert('Точка создана.\n\nТокен контроллера (сохраните — показывается один раз):\n\n'+r.secret_token);
+  }catch(e){ toast('Не удалось создать точку'); }
+}
+function openPoint(mid){ S.pointId=mid; go('point'); }
+
+// A3 Слоты точки
+async function viewPoint(c){
+  c.innerHTML = loadingBlock();
+  const m = S.machines.find(x=>x.machine_id===S.pointId);
+  let slots=[]; try{ slots = await api(`/api/admin/machines/${encodeURIComponent(S.pointId)}/slots`); }catch(e){}
+  S.slots = slots;
+  const st = statOf(S.pointId);
+  const dot = m&&m.online?'#2E9E5B':'#D14343'; const anim = m&&m.online?'glowdot':'glowdotred';
+  const active = slots.filter(s=>s.is_active).length;
+  const rows = slots.map(s=>{
+    let status,color;
+    if(!s.is_active){status='Пауза';color='#9A9A9A';}
+    else if(s.stock_qty<=0){status='Нет в наличии';color='#D14343';}
+    else if(s.stock_qty<=2){status='Заканчивается';color='#E0A400';}
+    else {status='В наличии';color='#2E9E5B';}
+    const chipS=`display:inline-flex;align-items:center;gap:6px;font-size:11.5px;font-weight:800;color:${color};background:${color}1f;border-radius:999px;padding:6px 11px;white-space:nowrap;border:1px solid ${color}55`;
+    return `<div style="display:grid;grid-template-columns:70px 1.6fr 150px 190px 130px;gap:12px;align-items:center;padding:9px 22px;border-top:1px solid var(--line)">
+      <span style="font-size:13.5px;font-weight:800;color:var(--accent2)">${esc(s.slot_id)}</span>
+      <span style="font-size:14px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(s.product_name)}</span>
+      <input type="number" step="0.01" value="${s.price}" class="fld" style="width:100px" onchange="saveSlot(${s.slot_id},'price',this.value)">
+      <div style="display:flex;align-items:center;gap:8px">
+        <input type="number" value="${s.stock_qty}" class="fld" style="width:74px" onchange="saveSlot(${s.slot_id},'stock_qty',this.value)">
+        <span class="sub" style="white-space:nowrap">из ${s.capacity}</span></div>
+      <span style="${chipS}">${status}</span></div>`;
+  }).join('');
+  const header = `<div>
+    <button onclick="go('pts')" style="border:none;background:transparent;color:var(--accent2);font-weight:800;font-size:13.5px;cursor:pointer;padding:0">← Все точки</button></div>
+    <div class="cardbox" style="border-radius:22px;padding:22px;display:flex;gap:18px;flex-wrap:wrap;align-items:center">
+      <div style="min-width:0">
+        <div style="display:flex;align-items:center;gap:10px"><span style="width:11px;height:11px;border-radius:50%;background:${dot};animation:${anim} 2s infinite"></span><span style="font-size:20px;font-weight:800">${esc(m?m.name||m.machine_id:S.pointId)}</span></div>
+        <div class="sub" style="margin-top:4px;margin-left:21px">${esc(m?m.location||'':'')}</div></div>
+      <div style="flex:1"></div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap">
+        <div style="background:var(--bg);border:1px solid var(--line);border-radius:14px;padding:10px 16px"><div class="sub" style="color:var(--text2)">Выручка сегодня</div><div style="font-size:19px;font-weight:800;color:var(--accent2)">${fmt(st.revenue)}</div></div>
+        <div style="background:var(--bg);border:1px solid var(--line);border-radius:14px;padding:10px 16px"><div class="sub">Продаж</div><div style="font-size:19px;font-weight:800">${st.sales}</div></div>
+        <div style="background:var(--bg);border:1px solid var(--line);border-radius:14px;padding:10px 16px"><div class="sub">Слотов активно</div><div style="font-size:19px;font-weight:800">${active} / ${slots.length}</div></div>
+      </div></div>`;
+  const table = `<div class="cardbox" style="border-radius:22px;overflow:hidden">
+    <div style="padding:18px 22px 6px;font-size:16px;font-weight:800">Слоты и товары</div>
+    <div style="overflow-x:auto"><div style="min-width:760px">
+      <div style="display:grid;grid-template-columns:70px 1.6fr 150px 190px 130px;gap:12px;padding:10px 22px;font-size:11.5px;font-weight:800;color:var(--text2);text-transform:uppercase;letter-spacing:.4px">
+        <span>Слот</span><span>Товар</span><span>Цена, c.</span><span>Остаток</span><span>Статус</span></div>
+      ${rows || '<div class="sub" style="padding:16px 22px">Слотов пока нет — добавьте ниже</div>'}
+    </div></div>
+    <div style="padding:16px 22px;border-top:1px solid var(--line);background:var(--bg)">
+      <div style="font-size:13px;font-weight:800;margin-bottom:10px">Добавить / изменить слот</div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap">
+        <input id="ns-id" placeholder="№ слота" type="number" class="fld" style="width:100px;background:var(--surf)">
+        <input id="ns-prod" placeholder="Название товара" class="fld" style="flex:1;min-width:170px;background:var(--surf)">
+        <input id="ns-price" placeholder="Цена" type="number" step="0.01" class="fld" style="width:96px;background:var(--surf)">
+        <input id="ns-cap" placeholder="Ёмкость" type="number" class="fld" style="width:104px;background:var(--surf)">
+        <input id="ns-stock" placeholder="Остаток" type="number" class="fld" style="width:104px;background:var(--surf)">
+        <button class="btn-accent" style="padding:11px 22px" onclick="addSlot()">Сохранить</button>
+      </div></div></div>`;
+  c.innerHTML = `<div style="display:flex;flex-direction:column;gap:16px;animation:fadeup .35s ease">${header}${table}</div>`;
+}
+async function saveSlot(slot_id, field, value){
+  const s = S.slots.find(x=>x.slot_id===slot_id); if(!s) return;
+  const body = {slot_id, product_name:s.product_name, price:s.price, stock_qty:s.stock_qty, capacity:s.capacity};
+  body[field] = field==='price'?parseFloat(value):parseInt(value,10);
+  try{ await api(`/api/admin/machines/${encodeURIComponent(S.pointId)}/slots`,{method:'POST',body:JSON.stringify(body)});
+    toast('Сохранено'); await refreshCore(); }catch(e){ toast('Ошибка сохранения'); }
+}
+async function addSlot(){
+  const slot_id=parseInt(document.getElementById('ns-id').value,10);
+  const product_name=document.getElementById('ns-prod').value.trim();
+  const price=parseFloat(document.getElementById('ns-price').value);
+  const capacity=parseInt(document.getElementById('ns-cap').value,10)||10;
+  const stock_qty=parseInt(document.getElementById('ns-stock').value,10)||0;
+  if(!slot_id||!product_name||isNaN(price)){ toast('Заполните № слота, товар и цену'); return; }
+  try{ await api(`/api/admin/machines/${encodeURIComponent(S.pointId)}/slots`,{method:'POST',body:JSON.stringify({slot_id,product_name,price,capacity,stock_qty})});
+    toast('Слот сохранён'); render(); }catch(e){ toast('Ошибка'); }
+}
+
+// A4 Сессии
+function viewSess(){
+  const ptOpts = [`<option value="all">Все точки</option>`].concat(S.machines.map(m=>`<option value="${esc(m.machine_id)}">${esc(m.name||m.machine_id)}</option>`)).join('');
+  const stOpts = [`<option value="all">Все статусы</option>`].concat(Object.keys(STMAP).map(k=>`<option value="${k}">${STMAP[k][0]}</option>`)).join('');
+  let list = S.sessions.slice();
+  if(S.fpt!=='all') list=list.filter(s=>s.machine_id===S.fpt);
+  if(S.fst!=='all') list=list.filter(s=>s.status===S.fst);
+  if(S.fday!=='all'){ const now=new Date(); const key=(d)=>d.toISOString().slice(0,10);
+    const today=key(now); const y=new Date(now); y.setDate(y.getDate()-1); const yest=key(y);
+    list=list.filter(s=>{ const k=dateKey(s.created_at); return S.fday==='today'?k===today:k===yest; }); }
+  if(S.fq){ const q=S.fq.toLowerCase(); list=list.filter(s=>(s.id+'').includes(q)||(s.phone_number||'').toLowerCase().includes(q)); }
+  const rows = list.map(r=>{
+    const m=S.machines.find(x=>x.machine_id===r.machine_id);
+    const retry = r.status==='refund_pending'? `<button onclick="retryRefund(${r.id})" style="font-size:12px;font-weight:800;color:var(--accent2);background:var(--accsoft);border:1.5px solid var(--accent2);border-radius:999px;padding:7px 13px;cursor:pointer;white-space:nowrap">↺ Повторить возврат</button>`:'';
+    return `<div style="display:grid;grid-template-columns:150px 1.1fr 52px 1.2fr 84px 128px 150px 1.2fr 88px 160px;gap:10px;align-items:center;padding:10px 18px;border-top:1px solid var(--line)">
+      <span style="font-family:ui-monospace,Menlo,monospace;font-size:11.5px;color:var(--text2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">#${r.id}</span>
+      <span style="font-size:13px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(m?m.name||m.machine_id:r.machine_id)}</span>
+      <span style="font-size:13px;font-weight:800;color:var(--accent2)">${esc(r.slot_id)}</span>
+      <span style="font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(r.product_name||'—')}</span>
+      <span style="font-size:13.5px;font-weight:800;color:var(--accent2)">${fmt(r.amount)}</span>
+      ${chip(r.status)}
+      <span style="font-size:12.5px;font-weight:600;font-variant-numeric:tabular-nums;white-space:nowrap">${esc(r.phone_number||'—')}</span>
+      <span style="font-size:12px;font-weight:600;color:#D14343;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(r.error||'')}</span>
+      <span style="font-size:12.5px;font-weight:700;color:var(--text2);white-space:nowrap">${timeOf(r.created_at)}</span>
+      <span>${retry}</span></div>`;
+  }).join('');
+  return `<div style="display:flex;flex-direction:column;gap:14px;animation:fadeup .35s ease">
+    <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+      <select class="fld" style="cursor:pointer" onchange="S.fpt=this.value;render()">${ptOpts.replace(`value="${S.fpt}"`,`value="${S.fpt}" selected`)}</select>
+      <select class="fld" style="cursor:pointer" onchange="S.fst=this.value;render()">${stOpts.replace(`value="${S.fst}"`,`value="${S.fst}" selected`)}</select>
+      <select class="fld" style="cursor:pointer" onchange="S.fday=this.value;render()">
+        <option value="all"${S.fday==='all'?' selected':''}>Все дни</option><option value="today"${S.fday==='today'?' selected':''}>Сегодня</option><option value="yest"${S.fday==='yest'?' selected':''}>Вчера</option></select>
+      <input class="fld" placeholder="Поиск: телефон или ID…" style="flex:1;min-width:150px" value="${esc(S.fq)}" oninput="S.fq=this.value" onchange="render()">
+      <span class="sub" style="white-space:nowrap">${list.length} записей</span></div>
+    <div class="tbl-wrap"><div style="overflow-x:auto"><div style="min-width:1120px">
+      <div style="display:grid;grid-template-columns:150px 1.1fr 52px 1.2fr 84px 128px 150px 1.2fr 88px 160px;gap:10px;padding:13px 18px;font-size:11px;font-weight:800;color:var(--text2);text-transform:uppercase;letter-spacing:.4px">
+        <span>ID</span><span>Точка</span><span>Слот</span><span>Товар</span><span>Сумма</span><span>Статус</span><span>Телефон</span><span>Ошибка</span><span>Время</span><span></span></div>
+      ${rows || '<div class="sub" style="padding:20px 18px">Нет сессий по фильтру</div>'}
+    </div></div></div>
+  </div>`;
+}
+async function retryRefund(id){ try{ await api(`/api/admin/sessions/${id}/retry-refund`,{method:'POST'}); toast('Возврат запущен повторно'); setTimeout(()=>refreshCore().then(render),1500);}catch(e){ toast('Ошибка'); } }
+
+// A5 Товары — агрегируем каталог из слотов всех точек
+async function viewProd(c){
+  c.innerHTML = loadingBlock();
+  const map = {};
+  for(const m of S.machines){
+    try{ const slots = await api(`/api/admin/machines/${encodeURIComponent(m.machine_id)}/slots`);
+      for(const s of slots){ const k=s.product_name; if(!map[k]) map[k]={name:k,price:s.price,pts:new Set()}; map[k].pts.add(m.machine_id); }
+    }catch(e){}
+  }
+  const prods = Object.values(map);
+  if(!prods.length){ c.innerHTML = emptyBlock('Каталог пуст','Товары появятся автоматически, когда вы добавите слоты на точках.'); return; }
+  const cards = prods.map(p=>`<div class="metric" style="padding:14px">
+      <div style="position:relative;aspect-ratio:1.3/1;border-radius:14px;background:var(--ped);display:grid;place-items:center;overflow:hidden">
+        <div style="width:52%;height:70%;border-radius:10px;border:1.5px dashed var(--line);background:repeating-linear-gradient(45deg,transparent 0 8px,rgba(128,128,128,.09) 8px 16px);display:grid;place-items:center"><span style="font-family:ui-monospace,Menlo,monospace;font-size:10px;color:var(--text2)">фото</span></div></div>
+      <div style="margin-top:12px;font-size:14.5px;font-weight:800;line-height:1.3;min-height:2.6em">${esc(p.name)}</div>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-top:6px">
+        <span style="font-size:11.5px;font-weight:800;color:var(--accent2);background:var(--accsoft);border-radius:999px;padding:5px 11px">${fmt(p.price)}</span>
+        <span class="sub">${p.pts.size} точ.</span></div></div>`).join('');
+  c.innerHTML = `<div style="display:flex;flex-direction:column;gap:16px;animation:fadeup .35s ease">
+    <div style="display:flex;align-items:center;gap:10px"><span class="sub">Общий каталог сети · ${prods.length} товаров</span><span style="flex:1"></span></div>
+    <div class="cards-prod">${cards}</div></div>`;
+}
+
+// A6 Статистика
+function viewStat(){
+  const done = S.sessions.filter(s=>s.status==='dispensed');
+  const rev = done.reduce((a,s)=>a+s.amount,0);
+  const avg = done.length? rev/done.length : 0;
+  const refunds = S.sessions.filter(s=>['refunded','refund_pending'].includes(s.status)).length;
+  const refShare = S.sessions.length? (refunds/S.sessions.length*100):0;
+  // часы пик
+  const hours = new Array(24).fill(0);
+  done.forEach(s=>{ const d=new Date(s.created_at+(s.created_at.endsWith('Z')?'':'Z')); hours[d.getHours()]++; });
+  const maxH=Math.max(1,...hours);
+  const bars = hours.map((v,i)=>`<div title="${i}:00 — ${v} прод." style="flex:1;height:${Math.max(3,Math.round(v/maxH*130))}px;border-radius:4px 4px 2px 2px;background:linear-gradient(180deg,#A03050,#8B253B)"></div>`).join('');
+  // топ товаров
+  const top={}; done.forEach(s=>{ top[s.product_name]=(top[s.product_name]||0)+s.amount; });
+  const tops=Object.entries(top).sort((a,b)=>b[1]-a[1]).slice(0,5);
+  const maxT=Math.max(1,...tops.map(t=>t[1]));
+  const topRows = tops.map(([n,v])=>`<div><div style="display:flex;justify-content:space-between;font-size:13px;font-weight:700"><span>${esc(n)}</span><span style="color:var(--text2)">${fmt(v)}</span></div>
+    <div style="height:9px;border-radius:999px;background:var(--bg);border:1px solid var(--line);margin-top:6px;overflow:hidden"><div style="height:100%;width:${Math.round(v/maxT*100)}%;background:linear-gradient(90deg,#A03050,#8B253B)"></div></div></div>`).join('') || `<div class="sub">Нет данных</div>`;
+  return `<div style="display:flex;flex-direction:column;gap:16px;animation:fadeup .35s ease">
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+      <span class="sub">По всем сессиям (${S.sessions.length})</span><span style="flex:1"></span>
+      <button class="btn-accent" style="background:linear-gradient(160deg,#3AA76A,#2E9E5B);box-shadow:0 8px 20px rgba(46,158,91,.35);padding:11px 17px;font-size:12.5px" onclick="exportCSV()">⇩ Excel</button>
+      <button onclick="exportCSV()" style="font-size:12.5px;font-weight:800;color:var(--text);background:var(--surf);border:1.5px solid var(--line);border-radius:12px;padding:11px 17px;cursor:pointer">⇩ CSV</button></div>
+    <div class="cards4">
+      <div class="metric"><div class="lbl">Выручка (выдано)</div><div class="val" style="color:var(--accent2)">${fmt(rev)}</div></div>
+      <div class="metric"><div class="lbl">Успешных продаж</div><div class="val">${done.length}</div></div>
+      <div class="metric"><div class="lbl">Средний чек</div><div class="val">${fmt(avg)}</div></div>
+      <div class="metric"><div class="lbl">Доля возвратов</div><div class="val">${refShare.toFixed(1).replace('.',',')}%</div></div></div>
+    <div class="grid-dash">
+      <div class="cardbox" style="border-radius:22px;padding:22px">
+        <div style="font-size:16px;font-weight:800">Часы пик</div><div class="sub" style="margin-top:2px">продажи по часам</div>
+        <div style="display:flex;align-items:flex-end;gap:3px;height:130px;margin-top:18px">${bars}</div>
+        <div style="display:flex;justify-content:space-between;font-size:10.5px;font-weight:700;color:var(--text2);margin-top:6px"><span>00</span><span>06</span><span>12</span><span>18</span><span>23</span></div></div>
+      <div class="cardbox" style="border-radius:22px;padding:22px">
+        <div style="font-size:16px;font-weight:800;margin-bottom:14px">Топ товаров</div>
+        <div style="display:flex;flex-direction:column;gap:12px">${topRows}</div></div>
+    </div></div>`;
+}
+function exportCSV(){
+  const head=['id','machine_id','slot_id','product','amount','status','phone','error','created_at'];
+  const rows=S.sessions.map(s=>[s.id,s.machine_id,s.slot_id,s.product_name,s.amount,s.status,s.phone_number,s.error,s.created_at]
+    .map(v=>`"${String(v==null?'':v).replace(/"/g,'""')}"`).join(','));
+  const csv='﻿'+[head.join(','),...rows].join('\n');
+  const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));
+  a.download='vending_sessions.csv'; a.click(); toast('Отчёт выгружен');
+}
+
+// A7 Настройки
+function viewSet(){
+  const theme=document.documentElement.getAttribute('data-theme');
+  const seg=(on)=>`font-size:12.5px;font-weight:800;border:none;border-radius:9px;padding:8px 14px;cursor:pointer;${on?'background:linear-gradient(160deg,#A03050,#8B253B);color:#fff;box-shadow:0 4px 12px rgba(139,37,59,.35)':'background:transparent;color:var(--text2)'}`;
+  const bl = S.blist.map((b,i)=>`<div style="display:flex;align-items:center;gap:12px;padding:10px 2px;border-bottom:1px solid var(--line)">
+    <span style="font-size:13.5px;font-weight:800;font-variant-numeric:tabular-nums">${esc(b.phone_number)}</span>
+    <span class="sub" style="flex:1">${esc(b.reason||'')}</span></div>`).join('') || `<div class="sub" style="padding:8px 2px">Список пуст</div>`;
+  return `<div style="display:flex;flex-direction:column;gap:16px;max-width:880px;animation:fadeup .35s ease">
+    <div class="cardbox" style="padding:20px 22px">
+      <div style="font-size:15.5px;font-weight:800;margin-bottom:14px">Внешний вид и язык</div>
+      <div style="display:flex;gap:20px;flex-wrap:wrap">
+        <div><div class="sub" style="margin-bottom:8px">Тема</div>
+          <div class="seg" style="background:var(--bg)"><button style="${seg(theme==='light')}" onclick="setTheme('light')">Светлая</button><button style="${seg(theme==='dark')}" onclick="setTheme('dark')">Тёмная</button></div></div>
+        <div><div class="sub" style="margin-bottom:8px">Язык интерфейса</div>
+          <div class="seg" style="background:var(--bg)"><button style="${seg(true)}">Русский</button><button style="${seg(false)}" onclick="toast('Тоҷикӣ — скоро')">Тоҷикӣ</button><button style="${seg(false)}" onclick="toast('English — soon')">English</button></div></div>
+      </div></div>
+
+    <div class="cardbox" style="padding:20px 22px">
+      <div style="font-size:15.5px;font-weight:800;margin-bottom:4px">Чёрный список номеров</div>
+      <div class="sub" style="margin-bottom:10px">Заблокированные номера не смогут оплачивать покупки</div>
+      ${bl}
+      <div style="display:flex;gap:10px;margin-top:14px;flex-wrap:wrap">
+        <input id="bl-phone" class="fld" placeholder="+992 …" style="width:170px">
+        <input id="bl-reason" class="fld" placeholder="Причина" style="flex:1;min-width:140px">
+        <button class="btn-accent" style="background:linear-gradient(160deg,#D14343,#B93838);box-shadow:0 8px 20px rgba(209,67,67,.35);padding:11px 20px" onclick="addBlack()">Заблокировать</button>
+      </div></div>
+
+    <div class="cardbox" style="padding:20px 22px">
+      <div style="font-size:15.5px;font-weight:800;margin-bottom:6px">Уведомления в Telegram</div>
+      <div class="sub">Раздел в разработке: алерты о сбоях автомата, потере связи и нехватке товара.</div></div>
+  </div>`;
+}
+async function addBlack(){
+  const phone_number=document.getElementById('bl-phone').value.trim();
+  const reason=document.getElementById('bl-reason').value.trim();
+  if(!phone_number){ toast('Введите номер'); return; }
+  try{ await api('/api/admin/blacklist',{method:'POST',body:JSON.stringify({phone_number,reason})});
+    S.blist.push({phone_number,reason}); toast('Номер заблокирован'); render(); }catch(e){ toast('Ошибка'); }
+}
+function setTheme(t){ document.documentElement.setAttribute('data-theme',t); localStorage.setItem('vq_theme',t); render(); }
+
+// ── Автовход, если токен сохранён ──
+if(TOKEN){
+  (async()=>{ try{ await api('/api/admin/stats');
+    document.getElementById('login').classList.add('hidden');
+    document.getElementById('shell').classList.remove('hidden');
+    buildNav(); go('dash'); startAutoRefresh();
+  }catch(e){ /* невалидный — покажем логин */ } })();
+}
 </script>
 </body>
 </html>
