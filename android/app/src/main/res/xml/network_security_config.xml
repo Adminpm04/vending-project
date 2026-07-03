@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Сервер пока на http:// (10.251.4.253), без TLS. Разрешаем cleartext только
+  для конкретного домена/IP, который задаётся в настройках приложения, а не
+  глобально — когда сервер перейдёт на https, этот файл можно оставить как есть,
+  система просто не будет его использовать для https-соединений.
+-->
+<network-security-config>
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="true">10.251.4.253</domain>
+    </domain-config>
+    <base-config cleartextTrafficPermitted="false">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>

@@ -2,3 +2,11 @@ __pycache__/
 *.pyc
 .env
 venv/
+
+# Android
+android/.gradle/
+android/local.properties
+android/**/build/
+android/.idea/
+android/*.iml
+android/captures/
