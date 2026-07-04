@@ -21,54 +21,59 @@
   @keyframes pop{0%{transform:scale(.4);opacity:0}60%{transform:scale(1.08)}100%{transform:scale(1);opacity:1}}
   @keyframes checkdraw{to{stroke-dashoffset:0}}
   @keyframes softpulse{0%,100%{opacity:1}50%{opacity:.55}}
+  /* Все размеры «резиновые» через clamp(min, vw/vmin, max): интерфейс сам
+     масштабируется под реальный экран — от маленького планшета автомата до
+     большого монитора, — не выглядя гигантским на компактных экранах. */
   #app{position:fixed;inset:0;display:flex;flex-direction:column}
-  .hdr{display:flex;align-items:center;gap:16px;padding:24px 30px 18px;flex:none}
-  .hdr h1{font-size:26px;font-weight:800;line-height:1.15;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin:0}
-  .hdr .sub{font-size:15px;font-weight:500;color:var(--text2);margin-top:2px}
-  .pill{display:flex;align-items:center;gap:9px;background:var(--surf);border:1px solid var(--line);border-radius:999px;padding:9px 16px;box-shadow:var(--card-sh)}
-  .pill .dot{width:11px;height:11px;border-radius:50%}
-  .clock{font-size:22px;font-weight:700;color:var(--text2);font-variant-numeric:tabular-nums}
-  .grid-wrap{flex:1;overflow:auto;padding:10px 30px 20px}
-  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:20px}
-  @media(orientation:portrait){.grid{grid-template-columns:repeat(auto-fill,minmax(180px,1fr))}}
-  .card{background:var(--surf);border:1px solid var(--line);border-radius:22px;padding:16px;box-shadow:var(--card-sh);
+  .hdr{display:flex;align-items:center;gap:clamp(8px,1.5vw,16px);padding:clamp(12px,2.5vw,24px) clamp(14px,3vw,30px) clamp(8px,1.8vw,18px);flex:none}
+  .hdr h1{font-size:clamp(17px,3vw,26px);font-weight:800;line-height:1.15;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin:0}
+  .hdr .sub{font-size:clamp(11px,1.7vw,15px);font-weight:500;color:var(--text2);margin-top:2px}
+  .pill{display:flex;align-items:center;gap:clamp(6px,1vw,9px);background:var(--surf);border:1px solid var(--line);border-radius:999px;padding:clamp(6px,1.1vw,9px) clamp(11px,1.8vw,16px);box-shadow:var(--card-sh)}
+  .pill span:last-child{font-size:clamp(12px,1.8vw,15px)}
+  .pill .dot{width:clamp(9px,1.3vw,11px);height:clamp(9px,1.3vw,11px);border-radius:50%}
+  .clock{font-size:clamp(15px,2.4vw,22px);font-weight:700;color:var(--text2);font-variant-numeric:tabular-nums}
+  .grid-wrap{flex:1;overflow:auto;padding:clamp(8px,1.5vw,10px) clamp(14px,3vw,30px) clamp(14px,2.5vw,20px)}
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(clamp(128px,20vw,220px),1fr));gap:clamp(10px,2vw,20px)}
+  @media(orientation:portrait){.grid{grid-template-columns:repeat(auto-fill,minmax(clamp(120px,28vw,180px),1fr))}}
+  .card{background:var(--surf);border:1px solid var(--line);border-radius:clamp(14px,1.8vw,22px);padding:clamp(10px,1.4vw,16px);box-shadow:var(--card-sh);
         cursor:pointer;transition:transform .18s,box-shadow .25s;position:relative}
   .card:active{transform:scale(.955)}
   .card.oos{opacity:.62;cursor:not-allowed}
-  .card .ped{position:relative;aspect-ratio:1.12/1;border-radius:16px;background:var(--ped);box-shadow:var(--ped-inner);display:grid;place-items:center;overflow:hidden}
+  .card .ped{position:relative;aspect-ratio:1.12/1;border-radius:clamp(11px,1.4vw,16px);background:var(--ped);box-shadow:var(--ped-inner);display:grid;place-items:center;overflow:hidden}
   .card .ped img{width:100%;height:100%;object-fit:contain}
   .card .ph{width:58%;height:76%;border-radius:12px;border:1.5px dashed var(--line);background:repeating-linear-gradient(45deg,transparent 0 9px,rgba(128,128,128,.09) 9px 18px);display:grid;place-items:center}
-  .card .ph span{font-family:ui-monospace,Menlo,monospace;font-size:11px;color:var(--text2)}
+  .card .ph span{font-family:ui-monospace,Menlo,monospace;font-size:clamp(9px,1.2vw,11px);color:var(--text2)}
   .card .shadow{position:absolute;left:12%;right:12%;bottom:7px;height:10px;border-radius:50%;background:radial-gradient(ellipse,rgba(0,0,0,.22),transparent 70%)}
   .card .oosbadge{position:absolute;inset:0;display:grid;place-items:center;background:var(--glass);backdrop-filter:blur(3px)}
-  .card .oosbadge span{font-size:15px;font-weight:800;color:#D14343;background:var(--surf);border:1px solid var(--line);border-radius:999px;padding:8px 16px}
-  .card .name{margin-top:14px;font-size:20px;font-weight:700;line-height:1.25;min-height:2.5em}
-  .card .row{display:flex;align-items:center;justify-content:space-between;margin-top:8px}
-  .card .price{font-size:30px;font-weight:800;color:var(--accent2);letter-spacing:-.5px}
-  .card .slot{font-size:13px;font-weight:700;color:var(--text2);background:var(--bg);border:1px solid var(--line);border-radius:999px;padding:5px 11px}
-  .foot{flex:none;text-align:center;padding:14px;font-size:17px;font-weight:600;color:var(--text2);border-top:1px solid var(--line)}
-  .overlay{position:fixed;inset:0;z-index:10;display:flex;align-items:center;justify-content:center;padding:30px}
+  .card .oosbadge span{font-size:clamp(12px,1.7vw,15px);font-weight:800;color:#D14343;background:var(--surf);border:1px solid var(--line);border-radius:999px;padding:clamp(6px,1vw,8px) clamp(11px,1.6vw,16px)}
+  .card .name{margin-top:clamp(10px,1.3vw,14px);font-size:clamp(14px,2vw,20px);font-weight:700;line-height:1.25;min-height:2.5em}
+  .card .row{display:flex;align-items:center;justify-content:space-between;margin-top:8px;gap:6px}
+  .card .price{font-size:clamp(20px,3.1vw,30px);font-weight:800;color:var(--accent2);letter-spacing:-.5px}
+  .card .slot{font-size:clamp(11px,1.5vw,13px);font-weight:700;color:var(--text2);background:var(--bg);border:1px solid var(--line);border-radius:999px;padding:clamp(4px,.7vw,5px) clamp(8px,1.3vw,11px);white-space:nowrap}
+  .foot{flex:none;text-align:center;padding:clamp(10px,1.5vw,14px);font-size:clamp(13px,2vw,17px);font-weight:600;color:var(--text2);border-top:1px solid var(--line)}
+  .overlay{position:fixed;inset:0;z-index:10;display:flex;align-items:center;justify-content:center;padding:clamp(18px,3vw,30px)}
   .ov-pay{background:var(--glass);backdrop-filter:blur(22px);-webkit-backdrop-filter:blur(22px);animation:fadeup .35s ease}
-  .ov-full{background:var(--bg);flex-direction:column;gap:26px;text-align:center;animation:fadeup .3s ease}
-  .pay-box{display:flex;flex-direction:column;align-items:center;gap:14px;max-width:560px;width:100%}
-  .pay-name{font-size:24px;font-weight:700;color:var(--text2)}
-  .pay-price{font-size:64px;font-weight:800;color:var(--accent2);letter-spacing:-2px;line-height:1}
-  .qr{background:#FFFFFF;border-radius:24px;padding:22px;box-shadow:0 6px 16px rgba(17,17,17,.10),0 30px 60px rgba(17,17,17,.22);margin-top:6px}
-  .qr img{display:block;width:256px;height:256px;border-radius:6px;image-rendering:pixelated}
-  .pay-hint{font-size:20px;font-weight:600;text-align:center;max-width:420px;line-height:1.45}
-  .timer{display:flex;align-items:center;gap:10px;background:rgba(224,164,0,.14);border:1px solid rgba(224,164,0,.35);border-radius:999px;padding:10px 20px}
+  .ov-full{background:var(--bg);flex-direction:column;gap:clamp(16px,3vw,26px);text-align:center;animation:fadeup .3s ease}
+  .pay-box{display:flex;flex-direction:column;align-items:center;gap:clamp(10px,1.8vw,14px);max-width:560px;width:100%}
+  .pay-name{font-size:clamp(17px,3vw,24px);font-weight:700;color:var(--text2)}
+  .pay-price{font-size:clamp(38px,8vw,64px);font-weight:800;color:var(--accent2);letter-spacing:-2px;line-height:1}
+  .qr{background:#FFFFFF;border-radius:clamp(16px,2.5vw,24px);padding:clamp(14px,2.2vw,22px);box-shadow:0 6px 16px rgba(17,17,17,.10),0 30px 60px rgba(17,17,17,.22);margin-top:6px}
+  .qr img{display:block;width:clamp(180px,34vmin,256px);height:clamp(180px,34vmin,256px);border-radius:6px;image-rendering:pixelated}
+  .pay-hint{font-size:clamp(15px,2.4vw,20px);font-weight:600;text-align:center;max-width:420px;line-height:1.45}
+  .timer{display:flex;align-items:center;gap:10px;background:rgba(224,164,0,.14);border:1px solid rgba(224,164,0,.35);border-radius:999px;padding:clamp(8px,1.3vw,10px) clamp(14px,2.4vw,20px)}
   .timer .d{width:10px;height:10px;border-radius:50%;background:#E0A400;animation:softpulse 1.6s infinite}
-  .timer .t{font-size:19px;font-weight:800;color:#E0A400;font-variant-numeric:tabular-nums}
-  .btn-ghost{font-family:inherit;font-size:21px;font-weight:700;color:var(--text);background:var(--surf);border:1.5px solid var(--line);border-radius:18px;padding:18px 60px;cursor:pointer;box-shadow:var(--card-sh);transition:transform .15s}
+  .timer .t{font-size:clamp(15px,2.3vw,19px);font-weight:800;color:#E0A400;font-variant-numeric:tabular-nums}
+  .btn-ghost{font-family:inherit;font-size:clamp(16px,2.6vw,21px);font-weight:700;color:var(--text);background:var(--surf);border:1.5px solid var(--line);border-radius:clamp(14px,2vw,18px);padding:clamp(13px,2.2vw,18px) clamp(36px,7vw,60px);cursor:pointer;box-shadow:var(--card-sh);transition:transform .15s}
   .btn-ghost:active{transform:scale(.96)}
-  .btn-accent{font-family:inherit;font-size:20px;font-weight:700;color:#fff;background:linear-gradient(160deg,#A03050,#8B253B);border:none;border-radius:18px;padding:18px 54px;cursor:pointer;box-shadow:var(--btn-sh)}
+  .btn-accent{font-family:inherit;font-size:clamp(16px,2.5vw,20px);font-weight:700;color:#fff;background:linear-gradient(160deg,#A03050,#8B253B);border:none;border-radius:clamp(14px,2vw,18px);padding:clamp(13px,2.2vw,18px) clamp(32px,6vw,54px);cursor:pointer;box-shadow:var(--btn-sh)}
   .btn-accent:active{transform:scale(.96)}
-  .spinner{width:104px;height:104px;border-radius:50%;border:8px solid var(--line);border-top-color:var(--accent2);animation:spin 1s linear infinite}
-  .big-title{font-size:42px;font-weight:800;text-align:center;line-height:1.2}
-  .big-sub{font-size:25px;font-weight:600;color:var(--text2)}
-  .badge-ok{width:170px;height:170px;border-radius:50%;background:radial-gradient(circle at 32% 28%,#3CBF72,#2E9E5B);box-shadow:0 24px 60px rgba(46,158,91,.4),inset 0 2px 0 rgba(255,255,255,.35);display:grid;place-items:center;animation:pop .5s cubic-bezier(.2,1.4,.4,1)}
-  .badge-err{width:170px;height:170px;border-radius:50%;background:radial-gradient(circle at 32% 28%,#E05B5B,#D14343);box-shadow:0 24px 60px rgba(209,67,67,.38),inset 0 2px 0 rgba(255,255,255,.3);display:grid;place-items:center;animation:pop .5s cubic-bezier(.2,1.4,.4,1)}
-  .badge-err span{font-size:92px;font-weight:800;color:#fff;line-height:1;margin-top:-8px}
+  .spinner{width:clamp(72px,12vw,104px);height:clamp(72px,12vw,104px);border-radius:50%;border:clamp(6px,1vw,8px) solid var(--line);border-top-color:var(--accent2);animation:spin 1s linear infinite}
+  .big-title{font-size:clamp(26px,5.5vw,42px);font-weight:800;text-align:center;line-height:1.2}
+  .big-sub{font-size:clamp(16px,3.3vw,25px);font-weight:600;color:var(--text2)}
+  .badge-ok{width:clamp(120px,22vw,170px);height:clamp(120px,22vw,170px);border-radius:50%;background:radial-gradient(circle at 32% 28%,#3CBF72,#2E9E5B);box-shadow:0 24px 60px rgba(46,158,91,.4),inset 0 2px 0 rgba(255,255,255,.35);display:grid;place-items:center;animation:pop .5s cubic-bezier(.2,1.4,.4,1)}
+  .badge-ok svg{width:54%;height:54%}
+  .badge-err{width:clamp(120px,22vw,170px);height:clamp(120px,22vw,170px);border-radius:50%;background:radial-gradient(circle at 32% 28%,#E05B5B,#D14343);box-shadow:0 24px 60px rgba(209,67,67,.38),inset 0 2px 0 rgba(255,255,255,.3);display:grid;place-items:center;animation:pop .5s cubic-bezier(.2,1.4,.4,1)}
+  .badge-err span{font-size:clamp(60px,11vw,92px);font-weight:800;color:#fff;line-height:1;margin-top:-8px}
   .hidden{display:none!important}
 </style>
 </head>
@@ -124,10 +129,10 @@
 </div>
 
 <!-- K6 Недоступен -->
-<div id="ov-off" class="overlay ov-full hidden" style="padding:40px">
-  <div style="width:150px;height:150px;border-radius:38px;background:var(--ped);box-shadow:var(--card-sh),var(--ped-inner);display:flex;align-items:center;justify-content:center;gap:14px">
-    <span style="width:16px;height:56px;border-radius:8px;background:var(--text2)"></span>
-    <span style="width:16px;height:56px;border-radius:8px;background:var(--text2)"></span>
+<div id="ov-off" class="overlay ov-full hidden" style="padding:clamp(24px,5vw,40px)">
+  <div style="width:clamp(110px,20vw,150px);height:clamp(110px,20vw,150px);border-radius:clamp(28px,5vw,38px);background:var(--ped);box-shadow:var(--card-sh),var(--ped-inner);display:flex;align-items:center;justify-content:center;gap:14px">
+    <span style="width:clamp(12px,2vw,16px);height:clamp(42px,7.5vw,56px);border-radius:8px;background:var(--text2)"></span>
+    <span style="width:clamp(12px,2vw,16px);height:clamp(42px,7.5vw,56px);border-radius:8px;background:var(--text2)"></span>
   </div>
   <div class="big-title">Автомат временно не&nbsp;работает</div>
   <div class="big-sub" style="max-width:540px;line-height:1.5">Приносим извинения. Мы уже знаем о проблеме и скоро всё починим</div>
