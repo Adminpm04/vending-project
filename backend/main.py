@@ -44,7 +44,6 @@ async def _db(fn):
 @app.on_event("startup")
 async def startup():
     init_db()
-    os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
     await _db(_bootstrap_admin)
     asyncio.create_task(_ws_heartbeat())
 
@@ -180,6 +179,9 @@ async def kiosk_buy(machine_id: str, data: dict, db: Session = Depends(get_db)):
         "amount": slot.price,
         "product": slot.product_name,
         "qr_url": f"/api/qr/{result['invoice_id']}",
+        # Киоск отсчитывает ровно столько же, сколько сервер поллит оплату —
+        # иначе экран сбросится раньше, а поздняя оплата выдаст товар в пустоту.
+        "payment_timeout": settings.PAYMENT_POLL_TIMEOUT,
     }
 
 
@@ -488,6 +490,8 @@ async def login(data: dict, db: Session = Depends(get_db)):
     user = db.query(AdminUser).filter(AdminUser.username == username, AdminUser.is_active == True).first()
     if not user or not authlib.verify_password(password, user.password_hash):
         raise HTTPException(401, "invalid username or password")
+    # Попутно чистим протухшие сессии, чтобы таблица не росла бесконечно.
+    db.query(AdminSession).filter(AdminSession.expires_at < datetime.utcnow()).delete()
     token = authlib.new_session_token()
     db.add(AdminSession(token=token, user_id=user.id, expires_at=authlib.session_expiry()))
     db.commit()
@@ -606,6 +610,9 @@ async def set_machine_location(machine_id: str, data: dict, db: Session = Depend
 
 @app.post("/api/admin/machines/{machine_id}/slots", dependencies=[Depends(require_operator)])
 async def upsert_slot(machine_id: str, data: dict, db: Session = Depends(get_db)):
+    if data.get("slot_id") in (None, ""):
+        raise HTTPException(400, "slot_id required")
+    slot_id = int(data["slot_id"])
     # Если передан product_id — берём имя и фото из каталога (денормализуем на слот),
     # а цену/остаток задаём per-point из data (цена по умолчанию — из товара).
     product = None
@@ -614,7 +621,7 @@ async def upsert_slot(machine_id: str, data: dict, db: Session = Depends(get_db)
 
     slot = db.query(ProductSlot).filter(
         ProductSlot.machine_id == machine_id,
-        ProductSlot.slot_id == int(data["slot_id"]),
+        ProductSlot.slot_id == slot_id,
     ).first()
     if slot:
         if product is not None:
@@ -625,13 +632,16 @@ async def upsert_slot(machine_id: str, data: dict, db: Session = Depends(get_db)
             if field in data:
                 setattr(slot, field, data[field])
     else:
+        name = product.name if product else (data.get("product_name") or "").strip()
+        if not name:
+            raise HTTPException(400, "product_id or product_name required for a new slot")
         slot = ProductSlot(
             machine_id=machine_id,
-            slot_id=int(data["slot_id"]),
+            slot_id=slot_id,
             product_id=product.id if product else None,
-            product_name=product.name if product else data["product_name"],
+            product_name=name,
             image_url=product.image_url if product else data.get("image_url"),
-            price=float(data["price"]) if data.get("price") not in (None, "") else float(product.default_price or 0),
+            price=float(data["price"]) if data.get("price") not in (None, "") else float((product.default_price if product else 0) or 0),
             stock_qty=int(data.get("stock_qty", 0)),
             capacity=int(data.get("capacity", 10)),
         )
@@ -851,6 +861,8 @@ async def retry_refund(session_id: int, db: Session = Depends(get_db)):
 @app.post("/api/admin/machines/{machine_id}/force-dispense", dependencies=[Depends(require_operator)])
 async def force_dispense(machine_id: str, data: dict):
     """Ручная выдача оператором (форс-мажор). Без оплаты, только логируется."""
+    if data.get("slot_id") in (None, ""):
+        raise HTTPException(400, "slot_id required")
     ws = machine_clients.get(machine_id)
     if ws is None:
         raise HTTPException(503, "machine offline")

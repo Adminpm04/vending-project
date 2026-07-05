@@ -152,8 +152,8 @@ function applyTheme() {
 applyTheme();
 if (window.matchMedia) window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', applyTheme);
 
-let session = null, pollTimer = null, countdownTimer = null, ws = null, machineOnline = false;
-const PAY_SECONDS = 120;
+let session = null, pollTimer = null, countdownTimer = null, ws = null;
+const PAY_SECONDS_FALLBACK = 120; // если сервер не прислал payment_timeout
 
 function fmtPrice(v) { return (v % 1 ? v.toFixed(2).replace('.', ',') : v) + ' c.'; }
 function el(id) { return document.getElementById(id); }
@@ -173,7 +173,6 @@ async function loadCatalog() {
     const data = await r.json();
     el('m-name').textContent = data.name || 'Автомат';
     el('m-loc').textContent = data.location || '';
-    machineOnline = data.online;
     el('on-dot').style.background = data.online ? '#2E9E5B' : '#D14343';
     el('on-dot').style.animation = (data.online ? 'glowdot' : 'glowdotred') + ' 2s infinite';
     el('on-text').textContent = data.online ? 'Онлайн' : 'Офлайн';
@@ -220,7 +219,9 @@ async function buy(p) {
   el('pay-price').textContent = fmtPrice(session.amount);
   el('qr-img').src = session.qr_url;
   hideAll(); show('ov-pay');
-  startCountdown(PAY_SECONDS);
+  // Отсчёт ровно столько, сколько сервер ждёт оплату — чтобы экран не сбросился
+  // раньше, чем сервер перестанет принимать оплату по этому QR.
+  startCountdown(session.payment_timeout || PAY_SECONDS_FALLBACK);
   pollTimer = setInterval(checkStatus, 2500);
 }
 

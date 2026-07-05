@@ -275,7 +275,16 @@ async function refreshCore(){
   }catch(e){}
 }
 let autoT;
-function startAutoRefresh(){ clearInterval(autoT); refreshCore().then(render); autoT=setInterval(()=>refreshCore().then(render),15000); }
+function autoRefreshTick(){
+  refreshCore().then(()=>{
+    // Не перерисовываем, пока пользователь что-то вводит: иначе авто-обновление
+    // сотрёт открытую форму (товар/пользователь/слот) или собьёт фокус в поиске.
+    const a=document.activeElement;
+    if(a && (a.tagName==='INPUT'||a.tagName==='SELECT'||a.tagName==='TEXTAREA')) return;
+    render();
+  });
+}
+function startAutoRefresh(){ clearInterval(autoT); refreshCore().then(render); autoT=setInterval(autoRefreshTick,15000); }
 
 function statOf(mid){ return (S.stats?.by_machine||[]).find(m=>m.machine_id===mid) || {sales:0,revenue:0}; }
 
