@@ -66,8 +66,11 @@
   #toast{position:fixed;left:50%;bottom:26px;transform:translateX(-50%);z-index:80;background:rgba(17,17,17,.92);color:#F5F5F5;font-size:13.5px;font-weight:700;border-radius:999px;padding:12px 22px;box-shadow:0 16px 40px rgba(0,0,0,.35);backdrop-filter:blur(8px);animation:toastin .25s ease;white-space:nowrap}
   /* Карта города (Leaflet + CARTO — чистый стиль в духе Google Maps) */
   #leaflet-map{height:min(600px,72vh);border-radius:22px;border:1px solid var(--line);box-shadow:var(--card-sh);z-index:0;background:var(--surf)}
-  .vq-pin-wrap{filter:drop-shadow(0 3px 4px rgba(0,0,0,.35))}
-  .vq-pin-wrap svg{display:block}
+  .vq-dot{width:18px;height:18px;border-radius:50%;border:3px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,.45)}
+  .leaflet-tooltip.vq-tip{background:var(--surf);color:var(--text);border:1px solid var(--line);border-radius:999px;
+    padding:3px 11px;font-family:'Manrope',sans-serif;font-weight:800;font-size:12px;box-shadow:0 2px 10px rgba(0,0,0,.18);white-space:nowrap}
+  .leaflet-tooltip.vq-tip::before{display:none}
+  [data-theme="dark"] .leaflet-tooltip.vq-tip{background:#1B1B1B;color:#F5F5F5;border-color:#2A2A2A}
   .leaflet-popup-content-wrapper{border-radius:16px;box-shadow:0 8px 30px rgba(0,0,0,.18)}
   .leaflet-popup-content{margin:13px 15px;font-family:'Manrope',sans-serif}
   .leaflet-container{font-family:'Manrope',sans-serif}
@@ -456,10 +459,8 @@ function mountMap(){
   setTimeout(()=>leafletMap && leafletMap.invalidateSize(), 60); // корректный размер после вставки в DOM
 }
 function pinIcon(color){
-  const svg=`<div class="vq-pin-wrap"><svg width="30" height="40" viewBox="0 0 30 40" xmlns="http://www.w3.org/2000/svg">
-    <path d="M15 0C6.7 0 0 6.7 0 15c0 10.5 12.5 23 14.2 24.6a1.1 1.1 0 0 0 1.6 0C17.5 38 30 25.5 30 15 30 6.7 23.3 0 15 0z" fill="${color}" stroke="#fff" stroke-width="2.5"/>
-    <circle cx="15" cy="15" r="5.4" fill="#fff"/></svg></div>`;
-  return L.divIcon({className:'', html:svg, iconSize:[30,40], iconAnchor:[15,39], popupAnchor:[0,-36]});
+  return L.divIcon({className:'', html:`<div class="vq-dot" style="background:${color}"></div>`,
+    iconSize:[18,18], iconAnchor:[9,9], popupAnchor:[0,-10]});
 }
 function syncMarkers(){
   if(!markerLayer) return;
@@ -468,6 +469,8 @@ function syncMarkers(){
     if(m.lat==null||m.lng==null) continue;
     const st=statOf(m.machine_id); const color=m.online?'#2E9E5B':'#D14343';
     const mk=L.marker([m.lat,m.lng],{icon:pinIcon(color), draggable:canEdit()}).addTo(markerLayer);
+    // Постоянная подпись над кружком — сразу видно, где какая точка, без клика.
+    mk.bindTooltip(esc(m.name||m.machine_id), {permanent:true, direction:'top', offset:[0,-8], className:'vq-tip', opacity:1});
     mk.bindPopup(`<div style="min-width:150px">
       <div style="font-weight:800;font-size:14px;margin-bottom:2px">${esc(m.name||m.machine_id)}</div>
       <div style="color:#888;font-size:12px;margin-bottom:6px">${esc(m.location||'')}</div>
