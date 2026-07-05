@@ -88,8 +88,12 @@
     <div style="font-size:26px;font-weight:800;margin-top:10px">Vending QR</div>
     <div class="sub">Панель управления сетью автоматов</div>
     <div style="width:100%;margin-top:22px;display:flex;flex-direction:column;gap:8px">
-      <label style="font-size:13px;font-weight:700;color:var(--text2)">Токен доступа</label>
-      <input id="login-token" type="password" class="fld" placeholder="••••••••••••" style="font-size:16px;padding:15px 16px;border-radius:14px" onkeydown="if(event.key==='Enter')login()">
+      <label style="font-size:13px;font-weight:700;color:var(--text2)">Логин</label>
+      <input id="login-username" type="text" autocomplete="username" class="fld" placeholder="admin" style="font-size:16px;padding:15px 16px;border-radius:14px" onkeydown="if(event.key==='Enter')document.getElementById('login-password').focus()">
+    </div>
+    <div style="width:100%;margin-top:10px;display:flex;flex-direction:column;gap:8px">
+      <label style="font-size:13px;font-weight:700;color:var(--text2)">Пароль</label>
+      <input id="login-password" type="password" autocomplete="current-password" class="fld" placeholder="••••••••••••" style="font-size:16px;padding:15px 16px;border-radius:14px" onkeydown="if(event.key==='Enter')login()">
     </div>
     <button class="btn-accent" style="width:100%;margin-top:14px;font-size:16px;padding:16px;border-radius:14px" onclick="login()">Войти</button>
     <div id="login-err" style="font-size:12.5px;color:#D14343;font-weight:700;margin-top:10px;min-height:16px"></div>
@@ -105,8 +109,8 @@
     </div>
     <div id="nav" style="display:flex;flex-direction:column;gap:4px;padding:8px 12px;flex:1"></div>
     <div style="padding:14px;border-top:1px solid var(--line);display:flex;align-items:center;gap:10px">
-      <div style="width:38px;height:38px;border-radius:50%;background:var(--accsoft);color:var(--accent2);display:grid;place-items:center;font-weight:800;font-size:13px">VQ</div>
-      <div style="flex:1;min-width:0"><div style="font-size:13.5px;font-weight:700">Оператор</div><div class="sub">Владелец сети</div></div>
+      <div style="width:38px;height:38px;border-radius:50%;background:var(--accsoft);color:var(--accent2);display:grid;place-items:center;font-weight:800;font-size:13px" id="side-avatar">VQ</div>
+      <div style="flex:1;min-width:0"><div style="font-size:13.5px;font-weight:700" id="side-username">—</div><div class="sub" id="side-role">—</div></div>
       <button onclick="logout()" title="Выйти" style="border:none;background:transparent;color:var(--text2);font-size:16px;cursor:pointer">⏻</button>
     </div>
   </div>
@@ -116,7 +120,7 @@
       <div style="min-width:0"><div class="h1" id="tab-title">Дашборд</div><div class="sub" id="tab-sub"></div></div>
       <div style="flex:1"></div>
       <button class="toggle" onclick="toggleTheme()">◐ Тема</button>
-      <div class="avatar" style="width:36px;height:36px;font-size:12.5px">VQ</div>
+      <div class="avatar" style="width:36px;height:36px;font-size:12.5px" id="top-avatar">VQ</div>
     </div>
     <div id="content"></div>
     <div id="bottomnav"></div>
@@ -139,23 +143,31 @@ function toggleTheme(){
 initTheme();
 
 // ── Состояние ──
-let TOKEN = localStorage.getItem('vq_admin_token') || '';
-const S = { tab:'dash', pointId:null, machines:[], stats:null, sessions:[], slots:[],
+var TOKEN = localStorage.getItem('vq_session_token') || '';
+var ME = null; // {username, role}
+var S = { tab:'dash', pointId:null, machines:[], stats:null, sessions:[], slots:[], users:[],
             fpt:'all', fst:'all', fday:'all', fq:'', blist:[] };
 
-const NAV = [['dash','Дашборд','▦'],['pts','Точки','◉'],['sess','Сессии','≣'],['prod','Товары','▤'],['stat','Статистика','∿'],['set','Настройки','⚙']];
-const BN  = [['dash','Дашборд','▦'],['pts','Точки','◉'],['sess','Сессии','≣'],['prod','Товары','▤'],['set','Ещё','⋯']];
+const ROLE_LABEL = { admin:'Администратор', operator:'Оператор', viewer:'Наблюдатель' };
+const NAV_ALL = [['dash','Дашборд','▦'],['pts','Точки','◉'],['sess','Сессии','≣'],['prod','Товары','▤'],['stat','Статистика','∿'],['set','Настройки','⚙']];
+function navFor(role){ return role==='admin' ? NAV_ALL : NAV_ALL.filter(([id])=>id!=='set'); }
+function bnFor(role){
+  const base = [['dash','Дашборд','▦'],['pts','Точки','◉'],['sess','Сессии','≣'],['prod','Товары','▤']];
+  return role==='admin' ? base.concat([['set','Ещё','⋯']]) : base.concat([['stat','Ещё','∿']]);
+}
 const TAB_META = {
   dash:['Дашборд','Обзор сети за сегодня'], pts:['Точки','Автоматы вашей сети'],
   point:['Точка','Слоты и товары автомата'], sess:['Сессии','История покупок и возвратов'],
   prod:['Товары','Общий каталог сети'], stat:['Статистика','Аналитика продаж'],
-  set:['Настройки','Внешний вид, уведомления, доступы']
+  set:['Настройки','Внешний вид, уведомления, доступы, пользователи']
 };
 const STMAP = {
   pending:['Ожидание','#E0A400'], paid:['Оплачено','#2E9E5B'], dispensing:['Выдаётся','#E0A400'],
   dispensed:['Выдано','#2E9E5B'], refund_pending:['Возврат','#D14343'], refunded:['Возвращено','#9A9A9A'],
   expired:['Истекло','#9A9A9A'], failed:['Ошибка','#D14343']
 };
+function canEdit(){ return ME && (ME.role==='admin' || ME.role==='operator'); }
+function isAdmin(){ return ME && ME.role==='admin'; }
 
 // ── Утилиты ──
 function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
@@ -172,47 +184,64 @@ function toast(msg){ let e=document.getElementById('toast'); if(e) e.remove();
   clearTimeout(toastT); toastT=setTimeout(()=>e.remove(),2600); }
 
 async function api(path, opts={}){
-  const r = await fetch(path, {...opts, headers:{'Content-Type':'application/json','X-Admin-Token':TOKEN, ...(opts.headers||{})}});
-  if(r.status===401){ logout(); throw new Error('unauthorized'); }
-  if(!r.ok) throw new Error('http '+r.status);
+  const r = await fetch(path, {...opts, headers:{'Content-Type':'application/json','Authorization':'Bearer '+TOKEN, ...(opts.headers||{})}});
+  if(r.status===401){ doLogout(); throw new Error('unauthorized'); }
+  if(!r.ok){ let msg='http '+r.status; try{ const j=await r.json(); if(j.detail) msg=j.detail; }catch(e){} throw new Error(msg); }
   const ct=r.headers.get('content-type')||''; return ct.includes('json')? r.json(): r.text();
 }
 
 // ── Аутентификация ──
 async function login(){
-  TOKEN = document.getElementById('login-token').value.trim();
-  if(!TOKEN){ return; }
+  const username = document.getElementById('login-username').value.trim();
+  const password = document.getElementById('login-password').value;
+  if(!username || !password){ return; }
   try{
-    await api('/api/admin/stats');
-    localStorage.setItem('vq_admin_token', TOKEN);
-    document.getElementById('login').classList.add('hidden');
-    document.getElementById('shell').classList.remove('hidden');
-    buildNav(); go('dash'); startAutoRefresh();
+    const r = await fetch('/api/admin/login', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({username,password})});
+    if(!r.ok) throw new Error();
+    const data = await r.json();
+    TOKEN = data.token; ME = {username:data.username, role:data.role};
+    localStorage.setItem('vq_session_token', TOKEN);
+    enterShell();
   }catch(e){
-    document.getElementById('login-err').textContent = 'Неверный токен доступа';
+    document.getElementById('login-err').textContent = 'Неверный логин или пароль';
   }
 }
-function logout(){
-  TOKEN=''; localStorage.removeItem('vq_admin_token');
+async function logout(){
+  try{ await api('/api/admin/logout', {method:'POST'}); }catch(e){}
+  doLogout();
+}
+function doLogout(){
+  TOKEN=''; ME=null; localStorage.removeItem('vq_session_token');
   document.getElementById('shell').classList.add('hidden');
   document.getElementById('login').classList.remove('hidden');
   document.getElementById('login-err').textContent='';
 }
+function enterShell(){
+  document.getElementById('login').classList.add('hidden');
+  document.getElementById('shell').classList.remove('hidden');
+  const initials = ME.username.slice(0,2).toUpperCase();
+  document.getElementById('side-avatar').textContent = initials;
+  document.getElementById('top-avatar').textContent = initials;
+  document.getElementById('side-username').textContent = ME.username;
+  document.getElementById('side-role').textContent = ROLE_LABEL[ME.role] || ME.role;
+  buildNav(); go('dash'); startAutoRefresh();
+}
 
 // ── Навигация ──
 function buildNav(){
-  document.getElementById('nav').innerHTML = NAV.map(([id,label,icon])=>
+  document.getElementById('nav').innerHTML = navFor(ME.role).map(([id,label,icon])=>
     `<button class="nav-btn" data-nav="${id}" onclick="go('${id}')"><span style="width:22px;text-align:center;font-size:15px">${icon}</span><span>${label}</span></button>`).join('');
-  document.getElementById('bottomnav').innerHTML = BN.map(([id,label,icon])=>
-    `<button class="bn-btn" data-bn="${id}" onclick="go('${id==='set'?'set':id}')"><span style="font-size:17px;line-height:1">${icon}</span><span style="font-size:10px;font-weight:800">${label}</span></button>`).join('');
+  document.getElementById('bottomnav').innerHTML = bnFor(ME.role).map(([id,label,icon])=>
+    `<button class="bn-btn" data-bn="${id}" onclick="go('${id}')"><span style="font-size:17px;line-height:1">${icon}</span><span style="font-size:10px;font-weight:800">${label}</span></button>`).join('');
 }
 function markNav(){
   const active = S.tab==='point'?'pts':S.tab;
   document.querySelectorAll('[data-nav]').forEach(b=>b.classList.toggle('active', b.dataset.nav===active));
-  const bnActive = (S.tab==='stat'||S.tab==='set')?'set':active;
+  const bnActive = (ME.role!=='admin' && S.tab==='stat') ? 'stat' : (S.tab==='stat'||S.tab==='set')?'set':active;
   document.querySelectorAll('[data-bn]').forEach(b=>b.classList.toggle('active', b.dataset.bn===bnActive));
 }
 function go(tab){
+  if(tab==='set' && !isAdmin()) tab='dash'; // защита от прямого вызова go('set') не-админом
   S.tab = tab;
   const [t,s] = TAB_META[tab]||['',''];
   document.getElementById('tab-title').textContent = t;
@@ -244,7 +273,7 @@ function render(){
   else if(S.tab==='sess') c.innerHTML = viewSess();
   else if(S.tab==='prod') viewProd(c);
   else if(S.tab==='stat') c.innerHTML = viewStat();
-  else if(S.tab==='set') c.innerHTML = viewSet();
+  else if(S.tab==='set') viewSet(c);
 }
 
 function loadingBlock(){
@@ -315,7 +344,7 @@ function metric(lbl,val,icon,kind){
 // A2 Точки
 let ptsView='list';
 function viewPts(){
-  if(!S.machines.length) return `<div>${topAddPoint()}${emptyBlock('Пока нет точек','Добавьте первый автомат — задайте machine_id, название и локацию. Токен для контроллера покажется один раз.')}</div>`;
+  if(!S.machines.length) return `<div>${canEdit()?topAddPoint():''}${emptyBlock('Пока нет точек', canEdit() ? 'Добавьте первый автомат — задайте machine_id, название и локацию. Токен для контроллера покажется один раз.' : 'Точки появятся здесь, когда их добавит администратор или оператор.')}</div>`;
   const cards = S.machines.map(m=>{
     const st=statOf(m.machine_id); const dot=m.online?'#2E9E5B':'#D14343'; const anim=m.online?'glowdot':'glowdotred';
     return `<div class="pt-card" onclick="openPoint('${esc(m.machine_id)}')">
@@ -349,7 +378,7 @@ function viewPts(){
     <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
       <div class="seg"><button class="${ptsView==='list'?'active':''}" onclick="ptsView='list';render()">Список</button><button class="${ptsView==='map'?'active':''}" onclick="ptsView='map';render()">Карта города</button></div>
       <div style="flex:1"></div>
-      <button class="btn-accent" style="padding:12px 20px" onclick="addPoint()">+ Добавить точку</button>
+      ${canEdit() ? `<button class="btn-accent" style="padding:12px 20px" onclick="addPoint()">+ Добавить точку</button>` : ''}
     </div>
     ${ptsView==='list' ? `<div class="cards-pts">${cards}</div>` : map}
   </div>`;
@@ -385,12 +414,13 @@ async function viewPoint(c){
     else if(s.stock_qty<=2){status='Заканчивается';color='#E0A400';}
     else {status='В наличии';color='#2E9E5B';}
     const chipS=`display:inline-flex;align-items:center;gap:6px;font-size:11.5px;font-weight:800;color:${color};background:${color}1f;border-radius:999px;padding:6px 11px;white-space:nowrap;border:1px solid ${color}55`;
+    const ro = canEdit() ? '' : 'disabled';
     return `<div style="display:grid;grid-template-columns:70px 1.6fr 150px 190px 130px;gap:12px;align-items:center;padding:9px 22px;border-top:1px solid var(--line)">
       <span style="font-size:13.5px;font-weight:800;color:var(--accent2)">${esc(s.slot_id)}</span>
       <span style="font-size:14px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(s.product_name)}</span>
-      <input type="number" step="0.01" value="${s.price}" class="fld" style="width:100px" onchange="saveSlot(${s.slot_id},'price',this.value)">
+      <input type="number" step="0.01" value="${s.price}" class="fld" style="width:100px" ${ro} onchange="saveSlot(${s.slot_id},'price',this.value)">
       <div style="display:flex;align-items:center;gap:8px">
-        <input type="number" value="${s.stock_qty}" class="fld" style="width:74px" onchange="saveSlot(${s.slot_id},'stock_qty',this.value)">
+        <input type="number" value="${s.stock_qty}" class="fld" style="width:74px" ${ro} onchange="saveSlot(${s.slot_id},'stock_qty',this.value)">
         <span class="sub" style="white-space:nowrap">из ${s.capacity}</span></div>
       <span style="${chipS}">${status}</span></div>`;
   }).join('');
@@ -411,9 +441,9 @@ async function viewPoint(c){
     <div style="overflow-x:auto"><div style="min-width:760px">
       <div style="display:grid;grid-template-columns:70px 1.6fr 150px 190px 130px;gap:12px;padding:10px 22px;font-size:11.5px;font-weight:800;color:var(--text2);text-transform:uppercase;letter-spacing:.4px">
         <span>Слот</span><span>Товар</span><span>Цена, c.</span><span>Остаток</span><span>Статус</span></div>
-      ${rows || '<div class="sub" style="padding:16px 22px">Слотов пока нет — добавьте ниже</div>'}
+      ${rows || '<div class="sub" style="padding:16px 22px">Слотов пока нет'+(canEdit()?' — добавьте ниже':'')+'</div>'}
     </div></div>
-    <div style="padding:16px 22px;border-top:1px solid var(--line);background:var(--bg)">
+    ${canEdit() ? `<div style="padding:16px 22px;border-top:1px solid var(--line);background:var(--bg)">
       <div style="font-size:13px;font-weight:800;margin-bottom:10px">Добавить / изменить слот</div>
       <div style="display:flex;gap:10px;flex-wrap:wrap">
         <input id="ns-id" placeholder="№ слота" type="number" class="fld" style="width:100px;background:var(--surf)">
@@ -422,7 +452,7 @@ async function viewPoint(c){
         <input id="ns-cap" placeholder="Ёмкость" type="number" class="fld" style="width:104px;background:var(--surf)">
         <input id="ns-stock" placeholder="Остаток" type="number" class="fld" style="width:104px;background:var(--surf)">
         <button class="btn-accent" style="padding:11px 22px" onclick="addSlot()">Сохранить</button>
-      </div></div></div>`;
+      </div></div>` : ''}</div>`;
   c.innerHTML = `<div style="display:flex;flex-direction:column;gap:16px;animation:fadeup .35s ease">${header}${table}</div>`;
 }
 async function saveSlot(slot_id, field, value){
@@ -456,7 +486,7 @@ function viewSess(){
   if(S.fq){ const q=S.fq.toLowerCase(); list=list.filter(s=>(s.id+'').includes(q)||(s.phone_number||'').toLowerCase().includes(q)); }
   const rows = list.map(r=>{
     const m=S.machines.find(x=>x.machine_id===r.machine_id);
-    const retry = r.status==='refund_pending'? `<button onclick="retryRefund(${r.id})" style="font-size:12px;font-weight:800;color:var(--accent2);background:var(--accsoft);border:1.5px solid var(--accent2);border-radius:999px;padding:7px 13px;cursor:pointer;white-space:nowrap">↺ Повторить возврат</button>`:'';
+    const retry = (r.status==='refund_pending' && canEdit()) ? `<button onclick="retryRefund(${r.id})" style="font-size:12px;font-weight:800;color:var(--accent2);background:var(--accsoft);border:1.5px solid var(--accent2);border-radius:999px;padding:7px 13px;cursor:pointer;white-space:nowrap">↺ Повторить возврат</button>`:'';
     return `<div style="display:grid;grid-template-columns:150px 1.1fr 52px 1.2fr 84px 128px 150px 1.2fr 88px 160px;gap:10px;align-items:center;padding:10px 18px;border-top:1px solid var(--line)">
       <span style="font-family:ui-monospace,Menlo,monospace;font-size:11.5px;color:var(--text2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">#${r.id}</span>
       <span style="font-size:13px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(m?m.name||m.machine_id:r.machine_id)}</span>
@@ -556,14 +586,25 @@ function exportCSV(){
   a.download='vending_sessions.csv'; a.click(); toast('Отчёт выгружен');
 }
 
-// A7 Настройки
-function viewSet(){
+// A7 Настройки (только admin — доступ уже ограничен на уровне навигации и backend)
+async function viewSet(c){
+  c.innerHTML = loadingBlock();
+  try{ S.users = await api('/api/admin/users'); }catch(e){ S.users = []; }
   const theme=document.documentElement.getAttribute('data-theme');
   const seg=(on)=>`font-size:12.5px;font-weight:800;border:none;border-radius:9px;padding:8px 14px;cursor:pointer;${on?'background:linear-gradient(160deg,#A03050,#8B253B);color:#fff;box-shadow:0 4px 12px rgba(139,37,59,.35)':'background:transparent;color:var(--text2)'}`;
   const bl = S.blist.map((b,i)=>`<div style="display:flex;align-items:center;gap:12px;padding:10px 2px;border-bottom:1px solid var(--line)">
     <span style="font-size:13.5px;font-weight:800;font-variant-numeric:tabular-nums">${esc(b.phone_number)}</span>
     <span class="sub" style="flex:1">${esc(b.reason||'')}</span></div>`).join('') || `<div class="sub" style="padding:8px 2px">Список пуст</div>`;
-  return `<div style="display:flex;flex-direction:column;gap:16px;max-width:880px;animation:fadeup .35s ease">
+  const roleChip = r => { const c={admin:'#8B253B',operator:'#2E9E5B',viewer:'#9A9A9A'}[r]||'#9A9A9A';
+    return `<span style="display:inline-flex;align-items:center;font-size:11px;font-weight:800;color:${c};background:${c}1f;border-radius:999px;padding:5px 10px;border:1px solid ${c}55">${ROLE_LABEL[r]||r}</span>`; };
+  const users = S.users.map(u=>`<div style="display:flex;align-items:center;gap:12px;padding:11px 2px;border-bottom:1px solid var(--line)">
+    <div style="width:34px;height:34px;border-radius:50%;background:var(--accsoft);color:var(--accent2);display:grid;place-items:center;font-weight:800;font-size:12px;flex:none">${esc(u.username.slice(0,2).toUpperCase())}</div>
+    <div style="flex:1;min-width:0"><div style="font-size:13.5px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(u.username)}</div>
+      <div class="sub">${u.is_active?'активен':'отключён'}</div></div>
+    ${roleChip(u.role)}
+    ${u.username===ME.username ? '' : `<button onclick="removeUser(${u.id},'${esc(u.username)}')" title="Удалить" style="border:1.5px solid var(--line);background:transparent;color:var(--text2);font-size:12px;font-weight:700;border-radius:999px;padding:6px 12px;cursor:pointer;margin-left:8px" onmouseover="this.style.color='#D14343';this.style.borderColor='#D14343'" onmouseout="this.style.color='var(--text2)';this.style.borderColor='var(--line)'">Удалить</button>`}
+  </div>`).join('') || `<div class="sub" style="padding:8px 2px">Только вы</div>`;
+  c.innerHTML = `<div style="display:flex;flex-direction:column;gap:16px;max-width:880px;animation:fadeup .35s ease">
     <div class="cardbox" style="padding:20px 22px">
       <div style="font-size:15.5px;font-weight:800;margin-bottom:14px">Внешний вид и язык</div>
       <div style="display:flex;gap:20px;flex-wrap:wrap">
@@ -572,6 +613,21 @@ function viewSet(){
         <div><div class="sub" style="margin-bottom:8px">Язык интерфейса</div>
           <div class="seg" style="background:var(--bg)"><button style="${seg(true)}">Русский</button><button style="${seg(false)}" onclick="toast('Тоҷикӣ — скоро')">Тоҷикӣ</button><button style="${seg(false)}" onclick="toast('English — soon')">English</button></div></div>
       </div></div>
+
+    <div class="cardbox" style="padding:20px 22px">
+      <div style="display:flex;align-items:center;margin-bottom:4px"><div style="font-size:15.5px;font-weight:800">Пользователи панели</div><span style="flex:1"></span>
+        <button class="btn-accent" style="padding:9px 16px;font-size:12.5px" onclick="showAddUser()">+ Добавить пользователя</button></div>
+      <div class="sub" style="margin-bottom:10px">Роли: администратор — полный доступ; оператор — точки/слоты/сессии без настроек; наблюдатель — только просмотр</div>
+      <div id="user-form" class="hidden" style="display:flex;gap:10px;flex-wrap:wrap;padding:12px;margin-bottom:10px;background:var(--bg);border-radius:12px;border:1px solid var(--line)">
+        <input id="nu-username" class="fld" placeholder="Логин" style="width:160px;background:var(--surf)">
+        <input id="nu-password" class="fld" type="password" placeholder="Пароль (мин. 6 симв.)" style="width:200px;background:var(--surf)">
+        <select id="nu-role" class="fld" style="background:var(--surf);cursor:pointer">
+          <option value="operator">Оператор</option><option value="viewer">Наблюдатель</option><option value="admin">Администратор</option>
+        </select>
+        <button class="btn-accent" style="padding:11px 20px" onclick="addUser()">Создать</button>
+      </div>
+      ${users}
+    </div>
 
     <div class="cardbox" style="padding:20px 22px">
       <div style="font-size:15.5px;font-weight:800;margin-bottom:4px">Чёрный список номеров</div>
@@ -588,6 +644,21 @@ function viewSet(){
       <div class="sub">Раздел в разработке: алерты о сбоях автомата, потере связи и нехватке товара.</div></div>
   </div>`;
 }
+function showAddUser(){ document.getElementById('user-form').classList.remove('hidden'); }
+async function addUser(){
+  const username=document.getElementById('nu-username').value.trim();
+  const password=document.getElementById('nu-password').value;
+  const role=document.getElementById('nu-role').value;
+  if(!username || password.length<6){ toast('Логин и пароль от 6 символов'); return; }
+  try{ await api('/api/admin/users',{method:'POST',body:JSON.stringify({username,password,role})});
+    toast('Пользователь создан'); render(); }
+  catch(e){ toast(e.message==='username already exists' ? 'Такой логин уже занят' : 'Ошибка создания'); }
+}
+async function removeUser(id, username){
+  if(!confirm(`Удалить пользователя «${username}»?`)) return;
+  try{ await api(`/api/admin/users/${id}`,{method:'DELETE'}); toast('Пользователь удалён'); render(); }
+  catch(e){ toast('Не удалось удалить'); }
+}
 async function addBlack(){
   const phone_number=document.getElementById('bl-phone').value.trim();
   const reason=document.getElementById('bl-reason').value.trim();
@@ -597,13 +668,12 @@ async function addBlack(){
 }
 function setTheme(t){ document.documentElement.setAttribute('data-theme',t); localStorage.setItem('vq_theme',t); render(); }
 
-// ── Автовход, если токен сохранён ──
+// ── Автовход, если сессия сохранена ──
 if(TOKEN){
-  (async()=>{ try{ await api('/api/admin/stats');
-    document.getElementById('login').classList.add('hidden');
-    document.getElementById('shell').classList.remove('hidden');
-    buildNav(); go('dash'); startAutoRefresh();
-  }catch(e){ /* невалидный — покажем логин */ } })();
+  (async()=>{ try{
+    ME = await api('/api/admin/me');
+    enterShell();
+  }catch(e){ /* сессия истекла/невалидна — покажем логин */ } })();
 }
 </script>
 </body>

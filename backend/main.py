@@ -17,9 +17,11 @@ import secrets
 from database import (
     get_db, init_db, SessionLocal,
     VendingMachine, ProductSlot, VendingSession, Blacklist, SessionStatus,
+    AdminUser, AdminSession, AdminRole,
 )
 from jetqr import create_invoice, check_invoice, cancel_invoice
 from config import settings
+import auth as authlib
 
 app = FastAPI(title="Vending QR Payment System")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
@@ -42,7 +44,30 @@ async def _db(fn):
 @app.on_event("startup")
 async def startup():
     init_db()
+    await _db(_bootstrap_admin)
     asyncio.create_task(_ws_heartbeat())
+
+
+def _bootstrap_admin():
+    """Один раз при пустой таблице пользователей — создать стартовый admin-аккаунт.
+    Дальше пользователей заводит сам admin через панель, эта функция больше
+    не понадобится (данные из настроек используются только для первого запуска)."""
+    db = SessionLocal()
+    try:
+        if db.query(AdminUser).count() > 0:
+            return
+        db.add(AdminUser(
+            username=settings.ADMIN_BOOTSTRAP_USERNAME,
+            password_hash=authlib.hash_password(settings.ADMIN_BOOTSTRAP_PASSWORD),
+            role=AdminRole.admin,
+        ))
+        db.commit()
+        logging.warning(
+            f"Создан стартовый admin-аккаунт '{settings.ADMIN_BOOTSTRAP_USERNAME}' — "
+            f"смените пароль через панель после первого входа."
+        )
+    finally:
+        db.close()
 
 
 async def _ws_heartbeat():
@@ -425,14 +450,111 @@ async def notify_kiosk(machine_id: str, data: dict):
             pass
 
 
+# ─── AUTH ────────────────────────────────────────────────────────────────────
+
+def get_current_user(authorization: str = Header(default=""), db: Session = Depends(get_db)) -> AdminUser:
+    token = authorization.removeprefix("Bearer ").strip()
+    if not token:
+        raise HTTPException(401, "not authenticated")
+    session = db.query(AdminSession).filter(AdminSession.token == token).first()
+    if not session or session.expires_at < datetime.utcnow():
+        raise HTTPException(401, "session expired")
+    user = db.query(AdminUser).filter(AdminUser.id == session.user_id, AdminUser.is_active == True).first()
+    if not user:
+        raise HTTPException(401, "user not found or disabled")
+    return user
+
+
+def require_role(*roles: AdminRole):
+    """Доступ только для перечисленных ролей. viewer — везде read-only,
+    operator — оперативная работа, но не пользователи/настройки, admin — всё."""
+    def dep(user: AdminUser = Depends(get_current_user)) -> AdminUser:
+        if user.role not in roles:
+            raise HTTPException(403, "insufficient role")
+        return user
+    return dep
+
+
+require_admin = require_role(AdminRole.admin)
+require_operator = require_role(AdminRole.admin, AdminRole.operator)
+require_viewer = require_role(AdminRole.admin, AdminRole.operator, AdminRole.viewer)
+
+
+@app.post("/api/admin/login")
+async def login(data: dict, db: Session = Depends(get_db)):
+    username = (data.get("username") or "").strip()
+    password = data.get("password") or ""
+    user = db.query(AdminUser).filter(AdminUser.username == username, AdminUser.is_active == True).first()
+    if not user or not authlib.verify_password(password, user.password_hash):
+        raise HTTPException(401, "invalid username or password")
+    token = authlib.new_session_token()
+    db.add(AdminSession(token=token, user_id=user.id, expires_at=authlib.session_expiry()))
+    db.commit()
+    return {"token": token, "username": user.username, "role": user.role}
+
+
+@app.post("/api/admin/logout", dependencies=[Depends(get_current_user)])
+async def logout(authorization: str = Header(default=""), db: Session = Depends(get_db)):
+    token = authorization.removeprefix("Bearer ").strip()
+    db.query(AdminSession).filter(AdminSession.token == token).delete()
+    db.commit()
+    return {"success": True}
+
+
+@app.get("/api/admin/me")
+async def me(user: AdminUser = Depends(get_current_user)):
+    return {"username": user.username, "role": user.role}
+
+
+# ─── USER MANAGEMENT (только admin) ──────────────────────────────────────────
+
+@app.get("/api/admin/users", dependencies=[Depends(require_admin)])
+async def list_users(db: Session = Depends(get_db)):
+    users = db.query(AdminUser).order_by(AdminUser.created_at).all()
+    return [
+        {"id": u.id, "username": u.username, "role": u.role, "is_active": u.is_active,
+         "created_at": u.created_at.isoformat()}
+        for u in users
+    ]
+
+
+@app.post("/api/admin/users", dependencies=[Depends(require_admin)])
+async def create_user(data: dict, db: Session = Depends(get_db)):
+    username = (data.get("username") or "").strip()
+    password = data.get("password") or ""
+    role = data.get("role", AdminRole.operator)
+    if not username or len(password) < 6:
+        raise HTTPException(400, "username required, password must be at least 6 characters")
+    if role not in (AdminRole.admin, AdminRole.operator, AdminRole.viewer):
+        raise HTTPException(400, "invalid role")
+    if db.query(AdminUser).filter(AdminUser.username == username).first():
+        raise HTTPException(409, "username already exists")
+    user = AdminUser(username=username, password_hash=authlib.hash_password(password), role=role)
+    db.add(user)
+    db.commit()
+    return {"id": user.id, "username": user.username, "role": user.role}
+
+
+@app.delete("/api/admin/users/{user_id}", dependencies=[Depends(require_admin)])
+async def delete_user(user_id: int, me: AdminUser = Depends(require_admin), db: Session = Depends(get_db)):
+    if user_id == me.id:
+        raise HTTPException(400, "cannot delete your own account")
+    user = db.query(AdminUser).filter(AdminUser.id == user_id).first()
+    if not user:
+        raise HTTPException(404, "user not found")
+    remaining_admins = db.query(AdminUser).filter(
+        AdminUser.role == AdminRole.admin, AdminUser.id != user_id).count()
+    if user.role == AdminRole.admin and remaining_admins == 0:
+        raise HTTPException(400, "cannot delete the last remaining admin")
+    db.query(AdminSession).filter(AdminSession.user_id == user_id).delete()
+    db.delete(user)
+    db.commit()
+    return {"success": True}
+
+
 # ─── ADMIN API ───────────────────────────────────────────────────────────────
 
-def require_admin(x_admin_token: str = Header(default="")):
-    if not secrets.compare_digest(x_admin_token, settings.ADMIN_TOKEN):
-        raise HTTPException(401, "invalid admin token")
-
-
-@app.post("/api/admin/machines", dependencies=[Depends(require_admin)])
+@app.post("/api/admin/machines", dependencies=[Depends(require_operator)])
 async def add_machine(data: dict, db: Session = Depends(get_db)):
     token = secrets.token_urlsafe(32)
     m = VendingMachine(
@@ -449,7 +571,7 @@ async def add_machine(data: dict, db: Session = Depends(get_db)):
     return {"machine_id": m.machine_id, "secret_token": token}
 
 
-@app.get("/api/admin/machines", dependencies=[Depends(require_admin)])
+@app.get("/api/admin/machines", dependencies=[Depends(require_viewer)])
 async def list_machines(db: Session = Depends(get_db)):
     machines = db.query(VendingMachine).all()
     return [
@@ -464,7 +586,7 @@ async def list_machines(db: Session = Depends(get_db)):
     ]
 
 
-@app.post("/api/admin/machines/{machine_id}/slots", dependencies=[Depends(require_admin)])
+@app.post("/api/admin/machines/{machine_id}/slots", dependencies=[Depends(require_operator)])
 async def upsert_slot(machine_id: str, data: dict, db: Session = Depends(get_db)):
     slot = db.query(ProductSlot).filter(
         ProductSlot.machine_id == machine_id,
@@ -489,7 +611,7 @@ async def upsert_slot(machine_id: str, data: dict, db: Session = Depends(get_db)
     return {"success": True}
 
 
-@app.get("/api/admin/machines/{machine_id}/slots", dependencies=[Depends(require_admin)])
+@app.get("/api/admin/machines/{machine_id}/slots", dependencies=[Depends(require_viewer)])
 async def list_slots(machine_id: str, db: Session = Depends(get_db)):
     slots = db.query(ProductSlot).filter(
         ProductSlot.machine_id == machine_id).order_by(ProductSlot.slot_id).all()
@@ -506,7 +628,7 @@ async def list_slots(machine_id: str, db: Session = Depends(get_db)):
     ]
 
 
-@app.get("/api/admin/sessions", dependencies=[Depends(require_admin)])
+@app.get("/api/admin/sessions", dependencies=[Depends(require_viewer)])
 async def list_sessions(machine_id: str | None = None, db: Session = Depends(get_db)):
     q = db.query(VendingSession)
     if machine_id:
@@ -529,7 +651,7 @@ async def list_sessions(machine_id: str | None = None, db: Session = Depends(get
     ]
 
 
-@app.get("/api/admin/stats", dependencies=[Depends(require_admin)])
+@app.get("/api/admin/stats", dependencies=[Depends(require_viewer)])
 async def stats(db: Session = Depends(get_db)):
     from sqlalchemy import func
     today = datetime.utcnow().date()
@@ -559,7 +681,7 @@ async def stats(db: Session = Depends(get_db)):
     }
 
 
-@app.post("/api/admin/sessions/{session_id}/retry-refund", dependencies=[Depends(require_admin)])
+@app.post("/api/admin/sessions/{session_id}/retry-refund", dependencies=[Depends(require_operator)])
 async def retry_refund(session_id: int, db: Session = Depends(get_db)):
     """Повторить возврат для зависшей refund_pending сессии."""
     s = db.query(VendingSession).filter(VendingSession.id == session_id).first()
@@ -569,7 +691,7 @@ async def retry_refund(session_id: int, db: Session = Depends(get_db)):
     return {"success": True}
 
 
-@app.post("/api/admin/machines/{machine_id}/force-dispense", dependencies=[Depends(require_admin)])
+@app.post("/api/admin/machines/{machine_id}/force-dispense", dependencies=[Depends(require_operator)])
 async def force_dispense(machine_id: str, data: dict):
     """Ручная выдача оператором (форс-мажор). Без оплаты, только логируется."""
     ws = machine_clients.get(machine_id)

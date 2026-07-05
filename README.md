@@ -32,7 +32,11 @@ cd backend && ../venv/bin/uvicorn main:app --host 0.0.0.0 --port 8000
 ```
 
 - Kiosk: `http://server:8000/kiosk/{machine_id}` (fullscreen-браузер на планшете)
-- Админка: `http://server:8000/admin` (нужен ADMIN_TOKEN)
+- Админка: `http://server:8000/admin` — вход по логину/паролю. При первом запуске
+  создаётся один аккаунт из `ADMIN_BOOTSTRAP_USERNAME`/`ADMIN_BOOTSTRAP_PASSWORD`
+  (.env), дальше пользователей заводит сам admin через «Настройки → Пользователи».
+  Роли: `admin` (всё, включая пользователей), `operator` (точки/слоты/сессии,
+  без настроек), `viewer` (только просмотр).
 
 ## Запуск контроллера точки
 

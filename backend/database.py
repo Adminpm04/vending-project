@@ -19,6 +19,12 @@ SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
 
+class AdminRole(str, enum.Enum):
+    admin = "admin"        # полный доступ: точки, слоты, сессии, чёрный список, пользователи
+    operator = "operator"  # оперативная работа: точки, слоты, сессии, возвраты — без настроек/пользователей
+    viewer = "viewer"      # только просмотр, без единого мутирующего действия
+
+
 class SessionStatus(str, enum.Enum):
     pending = "pending"                # инвойс создан, ждём оплату
     paid = "paid"                      # оплата подтверждена JetQR
@@ -92,6 +98,27 @@ class Blacklist(Base):
     phone_number = Column(String(20), unique=True, nullable=False, index=True)
     reason = Column(String(200), nullable=True)
     added_at = Column(DateTime, default=datetime.utcnow)
+
+
+class AdminUser(Base):
+    __tablename__ = "admin_users"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    username = Column(String(50), unique=True, nullable=False, index=True)
+    password_hash = Column(String(200), nullable=False)
+    role = Column(Enum(AdminRole), default=AdminRole.operator, nullable=False)
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class AdminSession(Base):
+    __tablename__ = "admin_sessions"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    token = Column(String(64), unique=True, nullable=False, index=True)
+    user_id = Column(Integer, ForeignKey("admin_users.id"), nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    expires_at = Column(DateTime, nullable=False)
 
 
 def get_db():

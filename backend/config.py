@@ -22,8 +22,11 @@ class Settings(BaseSettings):
     PAYMENT_POLL_TIMEOUT: int = 300       # сек; сколько ждём оплату после показа QR
     DISPENSE_TIMEOUT: int = 60            # сек; сколько ждём результат выдачи от контроллера
 
-    # Admin
-    ADMIN_TOKEN: str = "change-me"        # токен для admin API (заголовок X-Admin-Token)
+    # Admin — стартовый аккаунт создаётся один раз при первом запуске, если
+    # таблица пользователей пуста. Дальше пользователей заводит сам admin
+    # через раздел «Пользователи» в панели.
+    ADMIN_BOOTSTRAP_USERNAME: str = "admin"
+    ADMIN_BOOTSTRAP_PASSWORD: str = "change-me"
 
     class Config:
         env_file = ".env"
