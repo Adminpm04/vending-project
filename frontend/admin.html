@@ -552,14 +552,20 @@ async function viewPoint(c){
     const thumb = s.image_url
       ? `<img src="${esc(s.image_url)}" style="width:34px;height:34px;object-fit:contain;border-radius:8px;background:var(--bg);border:1px solid var(--line);flex:none">`
       : `<span style="width:34px;height:34px;border-radius:8px;background:var(--bg);border:1px dashed var(--line);flex:none"></span>`;
-    return `<div style="display:grid;grid-template-columns:70px 1.6fr 150px 190px 130px;gap:12px;align-items:center;padding:9px 22px;border-top:1px solid var(--line)">
+    const dispenseBtn = canEdit()
+      ? `<button onclick="forceDispense(${s.slot_id},'${esc(s.product_name)}')" ${(m&&m.online)?'':'disabled'}
+           title="${(m&&m.online)?'Выдать этот товар удалённо':'Автомат офлайн'}"
+           style="font-size:12px;font-weight:800;color:${(m&&m.online)?'#fff':'var(--text2)'};background:${(m&&m.online)?'linear-gradient(160deg,#3AA76A,#2E9E5B)':'var(--bg)'};border:1px solid ${(m&&m.online)?'transparent':'var(--line)'};border-radius:9px;padding:8px 14px;cursor:${(m&&m.online)?'pointer':'not-allowed'};white-space:nowrap">↓ Выдать</button>`
+      : '';
+    return `<div style="display:grid;grid-template-columns:60px 1.5fr 130px 170px 120px 110px;gap:12px;align-items:center;padding:9px 22px;border-top:1px solid var(--line)">
       <span style="font-size:13.5px;font-weight:800;color:var(--accent2)">${esc(s.slot_id)}</span>
       <div style="display:flex;align-items:center;gap:10px;min-width:0">${thumb}<span style="font-size:14px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(s.product_name)}</span></div>
       <input type="number" step="0.01" value="${s.price}" class="fld" style="width:100px" ${ro} onchange="saveSlot(${s.slot_id},'price',this.value)">
       <div style="display:flex;align-items:center;gap:8px">
         <input type="number" value="${s.stock_qty}" class="fld" style="width:74px" ${ro} onchange="saveSlot(${s.slot_id},'stock_qty',this.value)">
         <span class="sub" style="white-space:nowrap">из ${s.capacity}</span></div>
-      <span style="${chipS}">${status}</span></div>`;
+      <span style="${chipS}">${status}</span>
+      <span>${dispenseBtn}</span></div>`;
   }).join('');
   const header = `<div>
     <button onclick="go('pts')" style="border:none;background:transparent;color:var(--accent2);font-weight:800;font-size:13.5px;cursor:pointer;padding:0">← Все точки</button></div>
@@ -574,10 +580,11 @@ async function viewPoint(c){
         <div style="background:var(--bg);border:1px solid var(--line);border-radius:14px;padding:10px 16px"><div class="sub">Слотов активно</div><div style="font-size:19px;font-weight:800">${active} / ${slots.length}</div></div>
       </div></div>`;
   const table = `<div class="cardbox" style="border-radius:22px;overflow:hidden">
-    <div style="padding:18px 22px 6px;font-size:16px;font-weight:800">Слоты и товары</div>
-    <div style="overflow-x:auto"><div style="min-width:760px">
-      <div style="display:grid;grid-template-columns:70px 1.6fr 150px 190px 130px;gap:12px;padding:10px 22px;font-size:11.5px;font-weight:800;color:var(--text2);text-transform:uppercase;letter-spacing:.4px">
-        <span>Слот</span><span>Товар</span><span>Цена, c.</span><span>Остаток</span><span>Статус</span></div>
+    <div style="display:flex;align-items:center;gap:10px;padding:18px 22px 6px"><span style="font-size:16px;font-weight:800">Слоты и товары</span>
+      ${canEdit()?`<span class="sub" style="margin-left:auto">Клиент оплатил, но товар не выпал? Нажмите «Выдать» напротив нужного слота.</span>`:''}</div>
+    <div style="overflow-x:auto"><div style="min-width:820px">
+      <div style="display:grid;grid-template-columns:60px 1.5fr 130px 170px 120px 110px;gap:12px;padding:10px 22px;font-size:11.5px;font-weight:800;color:var(--text2);text-transform:uppercase;letter-spacing:.4px">
+        <span>Слот</span><span>Товар</span><span>Цена, c.</span><span>Остаток</span><span>Статус</span><span>Выдача</span></div>
       ${rows || '<div class="sub" style="padding:16px 22px">Слотов пока нет'+(canEdit()?' — добавьте ниже':'')+'</div>'}
     </div></div>
     ${canEdit() ? `<div style="padding:16px 22px;border-top:1px solid var(--line);background:var(--bg)">
@@ -606,6 +613,21 @@ function onSlotProductPick(){
   const opt=sel.options[sel.selectedIndex];
   if(sel.value==='__custom'){ custom.classList.remove('hidden'); custom.focus(); }
   else{ custom.classList.add('hidden'); custom.value=''; if(sel.value && opt.dataset.price && !price.value) price.value=opt.dataset.price; }
+}
+// Ручная выдача: клиент оплатил, но товар не выпал — оператор выдаёт его удалённо.
+let _dispensing=false;
+async function forceDispense(slot_id, name){
+  if(_dispensing) return;
+  if(!confirm(`Выдать «${name}» из слота ${slot_id} на этом автомате?\n\nАвтомат физически вытолкнет товар. Убедитесь, что клиент у автомата.`)) return;
+  _dispensing=true;
+  toast('Отправляем команду выдачи…');
+  try{
+    const r=await api(`/api/admin/machines/${encodeURIComponent(S.pointId)}/force-dispense`,{method:'POST',body:JSON.stringify({slot_id})});
+    if(r.success){ toast('✓ Товар выдан'); await refreshCore(); render(); }
+    else{ toast('Не удалось выдать: '+(r.message||'ошибка автомата')); }
+  }catch(e){
+    toast(e.message==='machine offline' ? 'Автомат сейчас офлайн' : 'Ошибка: '+(e.message||'не удалось'));
+  }finally{ _dispensing=false; }
 }
 async function saveSlot(slot_id, field, value){
   const s = S.slots.find(x=>x.slot_id===slot_id); if(!s) return;

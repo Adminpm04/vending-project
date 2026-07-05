@@ -275,13 +275,21 @@ async def poll_payment(session_id: int, invoice_id: str):
 
 # ─── DISPENSE FLOW ───────────────────────────────────────────────────────────
 
-async def dispense(session_id: int, machine_id: str, slot_id: int):
-    """Оплата подтверждена → шлём команду контроллеру, ждём результат VMC."""
+async def dispense(session_id: int, machine_id: str, slot_id: int, refund_on_fail: bool = True) -> dict:
+    """Отправляет команду выдачи контроллеру, ждёт результат VMC.
+    Возвращает {"ok": bool, "message": str}. При refund_on_fail=False (ручная
+    выдача оператором) деньги при сбое не возвращаются — только помечаем ошибку."""
+    async def _fail(reason: str) -> dict:
+        if refund_on_fail:
+            await _start_refund(session_id, reason)
+        else:
+            await _db(lambda: _mark_session_failed(session_id, reason))
+        return {"ok": False, "message": reason}
+
     ws = machine_clients.get(machine_id)
     if ws is None:
         logging.error(f"Machine {machine_id} went offline before dispensing session {session_id}")
-        await _start_refund(session_id, "machine offline")
-        return
+        return await _fail("machine offline")
 
     def _mark_dispensing():
         db = SessionLocal()
@@ -305,12 +313,10 @@ async def dispense(session_id: int, machine_id: str, slot_id: int):
         result = await asyncio.wait_for(future, timeout=settings.DISPENSE_TIMEOUT)
     except asyncio.TimeoutError:
         logging.error(f"Dispense timeout session {session_id} machine {machine_id}")
-        await _start_refund(session_id, "dispense timeout")
-        return
+        return await _fail("dispense timeout")
     except Exception as e:
         logging.error(f"Dispense send failed session {session_id}: {e}")
-        await _start_refund(session_id, "controller connection lost")
-        return
+        return await _fail("controller connection lost")
     finally:
         _dispense_waiters.pop(session_id, None)
 
@@ -334,10 +340,24 @@ async def dispense(session_id: int, machine_id: str, slot_id: int):
         await _db(_mark_dispensed)
         await notify_kiosk(machine_id, {"type": "dispensed", "session_id": session_id})
         logging.info(f"Session {session_id} dispensed OK")
+        return {"ok": True, "message": "dispensed"}
     else:
         error = result.get("message", "dispense error")
         logging.warning(f"Session {session_id} dispense failed: {error}")
-        await _start_refund(session_id, error)
+        return await _fail(error)
+
+
+def _mark_session_failed(session_id: int, reason: str):
+    db = SessionLocal()
+    try:
+        s = db.query(VendingSession).filter(VendingSession.id == session_id).first()
+        if s:
+            s.status = SessionStatus.failed
+            s.error = reason[:200]
+            s.closed_at = datetime.utcnow()
+            db.commit()
+    finally:
+        db.close()
 
 
 async def _start_refund(session_id: int, reason: str):
@@ -858,11 +878,14 @@ async def retry_refund(session_id: int, db: Session = Depends(get_db)):
     return {"success": True}
 
 
-@app.post("/api/admin/machines/{machine_id}/force-dispense", dependencies=[Depends(require_operator)])
-async def force_dispense(machine_id: str, data: dict):
-    """Ручная выдача оператором (форс-мажор). Без оплаты, только логируется."""
+@app.post("/api/admin/machines/{machine_id}/force-dispense")
+async def force_dispense(machine_id: str, data: dict, user: AdminUser = Depends(require_operator)):
+    """Ручная выдача оператором: клиент оплатил, но товар не выпал — оператор
+    открывает автомат в панели и выдаёт нужный слот удалённо. Без оплаты и без
+    возврата при сбое (деньги уже получены), реальный результат возвращается."""
     if data.get("slot_id") in (None, ""):
         raise HTTPException(400, "slot_id required")
+    slot_id = int(data["slot_id"])
     ws = machine_clients.get(machine_id)
     if ws is None:
         raise HTTPException(503, "machine offline")
@@ -870,10 +893,12 @@ async def force_dispense(machine_id: str, data: dict):
     def _create():
         db = SessionLocal()
         try:
+            slot = db.query(ProductSlot).filter(
+                ProductSlot.machine_id == machine_id, ProductSlot.slot_id == slot_id).first()
             s = VendingSession(
                 machine_id=machine_id,
-                slot_id=int(data["slot_id"]),
-                product_name="FORCE-DISPENSE",
+                slot_id=slot_id,
+                product_name=f"Ручная выдача · {user.username}" + (f" · {slot.product_name}" if slot else ""),
                 amount=0,
                 status=SessionStatus.paid,
             )
@@ -884,8 +909,8 @@ async def force_dispense(machine_id: str, data: dict):
         finally:
             db.close()
     session_id = await _db(_create)
-    await dispense(session_id, machine_id, int(data["slot_id"]))
-    return {"success": True, "session_id": session_id}
+    result = await dispense(session_id, machine_id, slot_id, refund_on_fail=False)
+    return {"success": result["ok"], "message": result["message"], "session_id": session_id}
 
 
 @app.post("/api/admin/blacklist", dependencies=[Depends(require_admin)])
