@@ -508,6 +508,7 @@ async function viewPoint(c){
   c.innerHTML = loadingBlock();
   const m = S.machines.find(x=>x.machine_id===S.pointId);
   let slots=[]; try{ slots = await api(`/api/admin/machines/${encodeURIComponent(S.pointId)}/slots`); }catch(e){}
+  try{ PRODUCTS = await api('/api/admin/products'); }catch(e){}
   S.slots = slots;
   const st = statOf(S.pointId);
   const dot = m&&m.online?'#2E9E5B':'#D14343'; const anim = m&&m.online?'glowdot':'glowdotred';
@@ -520,9 +521,12 @@ async function viewPoint(c){
     else {status='В наличии';color='#2E9E5B';}
     const chipS=`display:inline-flex;align-items:center;gap:6px;font-size:11.5px;font-weight:800;color:${color};background:${color}1f;border-radius:999px;padding:6px 11px;white-space:nowrap;border:1px solid ${color}55`;
     const ro = canEdit() ? '' : 'disabled';
+    const thumb = s.image_url
+      ? `<img src="${esc(s.image_url)}" style="width:34px;height:34px;object-fit:contain;border-radius:8px;background:var(--bg);border:1px solid var(--line);flex:none">`
+      : `<span style="width:34px;height:34px;border-radius:8px;background:var(--bg);border:1px dashed var(--line);flex:none"></span>`;
     return `<div style="display:grid;grid-template-columns:70px 1.6fr 150px 190px 130px;gap:12px;align-items:center;padding:9px 22px;border-top:1px solid var(--line)">
       <span style="font-size:13.5px;font-weight:800;color:var(--accent2)">${esc(s.slot_id)}</span>
-      <span style="font-size:14px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(s.product_name)}</span>
+      <div style="display:flex;align-items:center;gap:10px;min-width:0">${thumb}<span style="font-size:14px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(s.product_name)}</span></div>
       <input type="number" step="0.01" value="${s.price}" class="fld" style="width:100px" ${ro} onchange="saveSlot(${s.slot_id},'price',this.value)">
       <div style="display:flex;align-items:center;gap:8px">
         <input type="number" value="${s.stock_qty}" class="fld" style="width:74px" ${ro} onchange="saveSlot(${s.slot_id},'stock_qty',this.value)">
@@ -550,31 +554,52 @@ async function viewPoint(c){
     </div></div>
     ${canEdit() ? `<div style="padding:16px 22px;border-top:1px solid var(--line);background:var(--bg)">
       <div style="font-size:13px;font-weight:800;margin-bottom:10px">Добавить / изменить слот</div>
-      <div style="display:flex;gap:10px;flex-wrap:wrap">
+      <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
         <input id="ns-id" placeholder="№ слота" type="number" class="fld" style="width:100px;background:var(--surf)">
-        <input id="ns-prod" placeholder="Название товара" class="fld" style="flex:1;min-width:170px;background:var(--surf)">
+        <select id="ns-product" class="fld" style="min-width:180px;background:var(--surf);cursor:pointer" onchange="onSlotProductPick()">
+          <option value="">— товар из каталога —</option>
+          ${PRODUCTS.map(p=>`<option value="${p.id}" data-name="${esc(p.name)}" data-price="${p.default_price!=null?p.default_price:''}">${esc(p.name)}</option>`).join('')}
+          <option value="__custom">Свой (ввести название)</option>
+        </select>
+        <input id="ns-prod" placeholder="Название" class="fld hidden" style="flex:1;min-width:150px;background:var(--surf)">
         <input id="ns-price" placeholder="Цена" type="number" step="0.01" class="fld" style="width:96px;background:var(--surf)">
         <input id="ns-cap" placeholder="Ёмкость" type="number" class="fld" style="width:104px;background:var(--surf)">
         <input id="ns-stock" placeholder="Остаток" type="number" class="fld" style="width:104px;background:var(--surf)">
         <button class="btn-accent" style="padding:11px 22px" onclick="addSlot()">Сохранить</button>
-      </div></div>` : ''}</div>`;
+      </div>
+      ${PRODUCTS.length===0 ? '<div class="sub" style="margin-top:8px">Каталог пуст — можно добавить товары во вкладке «Товары» и выбирать их здесь.</div>' : ''}
+      </div>` : ''}</div>`;
   c.innerHTML = `<div style="display:flex;flex-direction:column;gap:16px;animation:fadeup .35s ease">${header}${table}</div>`;
+}
+function onSlotProductPick(){
+  const sel=document.getElementById('ns-product');
+  const custom=document.getElementById('ns-prod');
+  const price=document.getElementById('ns-price');
+  const opt=sel.options[sel.selectedIndex];
+  if(sel.value==='__custom'){ custom.classList.remove('hidden'); custom.focus(); }
+  else{ custom.classList.add('hidden'); custom.value=''; if(sel.value && opt.dataset.price && !price.value) price.value=opt.dataset.price; }
 }
 async function saveSlot(slot_id, field, value){
   const s = S.slots.find(x=>x.slot_id===slot_id); if(!s) return;
   const body = {slot_id, product_name:s.product_name, price:s.price, stock_qty:s.stock_qty, capacity:s.capacity};
+  if(s.product_id) body.product_id=s.product_id;
   body[field] = field==='price'?parseFloat(value):parseInt(value,10);
   try{ await api(`/api/admin/machines/${encodeURIComponent(S.pointId)}/slots`,{method:'POST',body:JSON.stringify(body)});
     toast('Сохранено'); await refreshCore(); }catch(e){ toast('Ошибка сохранения'); }
 }
 async function addSlot(){
   const slot_id=parseInt(document.getElementById('ns-id').value,10);
-  const product_name=document.getElementById('ns-prod').value.trim();
+  const sel=document.getElementById('ns-product');
   const price=parseFloat(document.getElementById('ns-price').value);
   const capacity=parseInt(document.getElementById('ns-cap').value,10)||10;
   const stock_qty=parseInt(document.getElementById('ns-stock').value,10)||0;
-  if(!slot_id||!product_name||isNaN(price)){ toast('Заполните № слота, товар и цену'); return; }
-  try{ await api(`/api/admin/machines/${encodeURIComponent(S.pointId)}/slots`,{method:'POST',body:JSON.stringify({slot_id,product_name,price,capacity,stock_qty})});
+  if(!slot_id){ toast('Укажите № слота'); return; }
+  const body={slot_id,price,capacity,stock_qty};
+  if(sel.value && sel.value!=='__custom'){ body.product_id=parseInt(sel.value,10); }
+  else{ body.product_name=document.getElementById('ns-prod').value.trim(); }
+  if(!body.product_id && !body.product_name){ toast('Выберите товар или введите название'); return; }
+  if(isNaN(price)){ toast('Укажите цену'); return; }
+  try{ await api(`/api/admin/machines/${encodeURIComponent(S.pointId)}/slots`,{method:'POST',body:JSON.stringify(body)});
     toast('Слот сохранён'); render(); }catch(e){ toast('Ошибка'); }
 }
 
@@ -621,27 +646,134 @@ function viewSess(){
 }
 async function retryRefund(id){ try{ await api(`/api/admin/sessions/${id}/retry-refund`,{method:'POST'}); toast('Возврат запущен повторно'); setTimeout(()=>refreshCore().then(render),1500);}catch(e){ toast('Ошибка'); } }
 
-// A5 Товары — агрегируем каталог из слотов всех точек
+// A5 Товары — каталог с CRUD, фото и ценами по точкам
+let PRODUCTS = [];
+let expandedProduct = null;
 async function viewProd(c){
   c.innerHTML = loadingBlock();
-  const map = {};
-  for(const m of S.machines){
-    try{ const slots = await api(`/api/admin/machines/${encodeURIComponent(m.machine_id)}/slots`);
-      for(const s of slots){ const k=s.product_name; if(!map[k]) map[k]={name:k,price:s.price,pts:new Set()}; map[k].pts.add(m.machine_id); }
-    }catch(e){}
-  }
-  const prods = Object.values(map);
-  if(!prods.length){ c.innerHTML = emptyBlock('Каталог пуст','Товары появятся автоматически, когда вы добавите слоты на точках.'); return; }
-  const cards = prods.map(p=>`<div class="metric" style="padding:14px">
+  try{ PRODUCTS = await api('/api/admin/products'); }catch(e){ PRODUCTS = []; }
+  const ph = `<div style="width:52%;height:70%;border-radius:10px;border:1.5px dashed var(--line);background:repeating-linear-gradient(45deg,transparent 0 8px,rgba(128,128,128,.09) 8px 16px);display:grid;place-items:center"><span style="font-family:ui-monospace,Menlo,monospace;font-size:10px;color:var(--text2)">нет фото</span></div>`;
+  const cards = PRODUCTS.map(p=>`<div class="metric" style="padding:14px">
       <div style="position:relative;aspect-ratio:1.3/1;border-radius:14px;background:var(--ped);display:grid;place-items:center;overflow:hidden">
-        <div style="width:52%;height:70%;border-radius:10px;border:1.5px dashed var(--line);background:repeating-linear-gradient(45deg,transparent 0 8px,rgba(128,128,128,.09) 8px 16px);display:grid;place-items:center"><span style="font-family:ui-monospace,Menlo,monospace;font-size:10px;color:var(--text2)">фото</span></div></div>
+        ${p.image_url ? `<img src="${esc(p.image_url)}" style="width:100%;height:100%;object-fit:contain">` : ph}
+        ${canEdit()?`<button onclick="deleteProduct(${p.id},'${esc(p.name)}')" title="Удалить" style="position:absolute;top:6px;right:6px;width:26px;height:26px;border:none;border-radius:8px;background:rgba(209,67,67,.9);color:#fff;font-size:13px;cursor:pointer">✕</button>`:''}
+      </div>
       <div style="margin-top:12px;font-size:14.5px;font-weight:800;line-height:1.3;min-height:2.6em">${esc(p.name)}</div>
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-top:6px">
-        <span style="font-size:11.5px;font-weight:800;color:var(--accent2);background:var(--accsoft);border-radius:999px;padding:5px 11px">${fmt(p.price)}</span>
-        <span class="sub">${p.pts.size} точ.</span></div></div>`).join('');
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-top:6px;gap:6px">
+        <span style="font-size:11px;font-weight:800;color:var(--accent2);background:var(--accsoft);border-radius:999px;padding:5px 10px">${p.category?esc(p.category):(p.default_price!=null?fmt(p.default_price):'товар')}</span>
+        <span class="sub">${p.points_count} точ.</span></div>
+      ${canEdit()?`<div style="display:flex;gap:6px;margin-top:10px">
+        <button onclick="editProduct(${p.id})" style="flex:1;font-size:12px;font-weight:700;color:var(--text);background:var(--bg);border:1px solid var(--line);border-radius:9px;padding:8px;cursor:pointer">Изменить</button>
+        <button onclick="togglePrices(${p.id})" style="flex:1;font-size:12px;font-weight:700;color:var(--accent2);background:var(--accsoft);border:1px solid var(--accent2);border-radius:9px;padding:8px;cursor:pointer">Цены по точкам</button>
+      </div>`:''}
+      <div id="pl-${p.id}"></div>
+    </div>`).join('');
   c.innerHTML = `<div style="display:flex;flex-direction:column;gap:16px;animation:fadeup .35s ease">
-    <div style="display:flex;align-items:center;gap:10px"><span class="sub">Общий каталог сети · ${prods.length} товаров</span><span style="flex:1"></span></div>
-    <div class="cards-prod">${cards}</div></div>`;
+    <div style="display:flex;align-items:center;gap:10px"><span class="sub">Каталог сети · ${PRODUCTS.length} товаров</span><span style="flex:1"></span>
+      ${canEdit()?`<button class="btn-accent" style="padding:12px 20px" onclick="showProductForm()">+ Добавить товар</button>`:''}</div>
+    ${canEdit()?productFormHTML():''}
+    ${PRODUCTS.length ? `<div class="cards-prod">${cards}</div>` : emptyBlock('Каталог пуст', canEdit()?'Нажмите «Добавить товар»: задайте название, фото и цену по умолчанию.':'Товары появятся, когда их добавит администратор или оператор.')}
+  </div>`;
+  if(expandedProduct){ const id=expandedProduct; expandedProduct=null; togglePrices(id); }
+}
+function productFormHTML(){
+  return `<div id="product-form" class="cardbox hidden" style="padding:16px 18px">
+    <input type="hidden" id="pf-id">
+    <div id="pf-title" style="font-size:14px;font-weight:800;margin-bottom:12px">Новый товар</div>
+    <div style="display:flex;gap:16px;flex-wrap:wrap;align-items:flex-start">
+      <div style="display:flex;flex-direction:column;align-items:center;gap:8px">
+        <div id="pf-preview" style="width:110px;height:88px;border-radius:12px;background:var(--ped);border:1px solid var(--line);display:grid;place-items:center;overflow:hidden">
+          <span class="sub">фото</span></div>
+        <label style="font-size:12px;font-weight:700;color:var(--accent2);cursor:pointer">Выбрать фото
+          <input type="file" accept="image/*" style="display:none" onchange="onPhotoPick(this)"></label>
+      </div>
+      <div style="flex:1;min-width:220px;display:flex;flex-direction:column;gap:10px">
+        <input id="pf-name" class="fld" placeholder="Название товара">
+        <div style="display:flex;gap:10px;flex-wrap:wrap">
+          <input id="pf-category" class="fld" placeholder="Категория (напр. Напитки)" style="flex:1;min-width:140px">
+          <input id="pf-price" type="number" step="0.01" class="fld" placeholder="Цена по умолч." style="width:150px">
+        </div>
+        <div style="display:flex;gap:10px">
+          <button class="btn-accent" style="padding:11px 22px" onclick="submitProduct()">Сохранить</button>
+          <button onclick="hideProductForm()" style="font-size:13px;font-weight:700;color:var(--text2);background:var(--bg);border:1px solid var(--line);border-radius:11px;padding:11px 18px;cursor:pointer">Отмена</button>
+        </div>
+      </div>
+    </div></div>`;
+}
+let pfImageUrl = null;
+function showProductForm(){
+  pfImageUrl=null;
+  document.getElementById('pf-id').value='';
+  document.getElementById('pf-title').textContent='Новый товар';
+  document.getElementById('pf-name').value='';
+  document.getElementById('pf-category').value='';
+  document.getElementById('pf-price').value='';
+  document.getElementById('pf-preview').innerHTML='<span class="sub">фото</span>';
+  document.getElementById('product-form').classList.remove('hidden');
+}
+function hideProductForm(){ document.getElementById('product-form').classList.add('hidden'); }
+function editProduct(id){
+  const p=PRODUCTS.find(x=>x.id===id); if(!p) return;
+  showProductForm();
+  document.getElementById('pf-id').value=p.id;
+  document.getElementById('pf-title').textContent='Изменить товар';
+  document.getElementById('pf-name').value=p.name;
+  document.getElementById('pf-category').value=p.category||'';
+  document.getElementById('pf-price').value=p.default_price!=null?p.default_price:'';
+  pfImageUrl=p.image_url||null;
+  if(p.image_url) document.getElementById('pf-preview').innerHTML=`<img src="${esc(p.image_url)}" style="width:100%;height:100%;object-fit:contain">`;
+  document.getElementById('product-form').scrollIntoView({behavior:'smooth',block:'nearest'});
+}
+async function onPhotoPick(input){
+  const file=input.files&&input.files[0]; if(!file) return;
+  if(file.size>4000000){ toast('Фото больше 4 МБ'); return; }
+  const reader=new FileReader();
+  reader.onload=async()=>{
+    document.getElementById('pf-preview').innerHTML=`<img src="${reader.result}" style="width:100%;height:100%;object-fit:contain">`;
+    try{
+      const r=await api('/api/admin/upload',{method:'POST',body:JSON.stringify({filename:file.name,data_base64:reader.result})});
+      pfImageUrl=r.url; toast('Фото загружено');
+    }catch(e){ toast('Не удалось загрузить фото'); }
+  };
+  reader.readAsDataURL(file);
+}
+async function submitProduct(){
+  const id=document.getElementById('pf-id').value;
+  const name=document.getElementById('pf-name').value.trim();
+  const category=document.getElementById('pf-category').value.trim();
+  const priceRaw=document.getElementById('pf-price').value;
+  if(!name){ toast('Введите название'); return; }
+  const body={name,category,image_url:pfImageUrl,default_price:priceRaw===''?null:parseFloat(priceRaw)};
+  try{
+    if(id){ await api(`/api/admin/products/${id}`,{method:'POST',body:JSON.stringify(body)}); toast('Товар изменён'); }
+    else{ await api('/api/admin/products',{method:'POST',body:JSON.stringify(body)}); toast('Товар добавлен'); }
+    hideProductForm(); render();
+  }catch(e){ toast('Ошибка сохранения'); }
+}
+async function deleteProduct(id, name){
+  if(!confirm(`Удалить товар «${name}» из каталога? Слоты на точках останутся, но потеряют привязку.`)) return;
+  try{ await api(`/api/admin/products/${id}`,{method:'DELETE'}); toast('Товар удалён'); render(); }
+  catch(e){ toast('Не удалось удалить'); }
+}
+async function togglePrices(id){
+  const box=document.getElementById('pl-'+id); if(!box) return;
+  if(box.innerHTML.trim()){ box.innerHTML=''; return; }
+  box.innerHTML='<div class="sub" style="padding:8px 0">Загрузка…</div>';
+  let placements=[]; try{ placements=await api(`/api/admin/products/${id}/placements`); }catch(e){}
+  if(!placements.length){ box.innerHTML='<div class="sub" style="padding:8px 0">Пока не продаётся ни на одной точке. Добавьте его в слот на нужной точке (вкладка «Точки»).</div>'; return; }
+  const ro=canEdit()?'':'disabled';
+  box.innerHTML=`<div style="margin-top:10px;border-top:1px solid var(--line);padding-top:10px;display:flex;flex-direction:column;gap:8px">
+    <div class="sub" style="font-weight:800">Цена по точкам</div>
+    ${placements.map(pl=>`<div style="display:flex;align-items:center;gap:8px">
+      <span style="flex:1;font-size:12.5px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(pl.machine_name)}</span>
+      <input type="number" step="0.01" value="${pl.price}" class="fld" style="width:90px;padding:7px 9px" ${ro}
+        onchange="savePlacementPrice('${esc(pl.machine_id)}',${pl.slot_id},${id},this.value)">
+      <span class="sub">c.</span></div>`).join('')}</div>`;
+}
+async function savePlacementPrice(machine_id, slot_id, product_id, value){
+  const price=parseFloat(value); if(isNaN(price)){ toast('Неверная цена'); return; }
+  try{ await api(`/api/admin/machines/${encodeURIComponent(machine_id)}/slots`,{method:'POST',body:JSON.stringify({slot_id,product_id,price})});
+    toast('Цена обновлена'); }catch(e){ toast('Ошибка'); }
 }
 
 // A6 Статистика

@@ -10,3 +10,6 @@ android/**/build/
 android/.idea/
 android/*.iml
 android/captures/
+
+# Загруженные фото товаров (хранятся вне git)
+uploads/

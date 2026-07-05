@@ -28,6 +28,11 @@ class Settings(BaseSettings):
     ADMIN_BOOTSTRAP_USERNAME: str = "admin"
     ADMIN_BOOTSTRAP_PASSWORD: str = "change-me"
 
+    # Каталог для загруженных фото товаров. Вне git-дерева, чтобы деплой
+    # (git reset --hard) их не трогал. Отдаётся статикой по /uploads.
+    UPLOAD_DIR: str = "/opt/vending-project/uploads"
+    UPLOAD_MAX_BYTES: int = 4_000_000   # ~4 МБ на фото
+
     class Config:
         env_file = ".env"
 

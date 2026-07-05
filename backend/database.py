@@ -57,6 +57,19 @@ class VendingMachine(Base):
     slots = relationship("ProductSlot", back_populates="machine")
 
 
+class Product(Base):
+    """Каталог товаров сети. Один товар может продаваться на многих точках,
+    в каждой — со своей ценой (цена хранится на слоте, per-point)."""
+    __tablename__ = "products"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    name = Column(String(100), nullable=False)
+    category = Column(String(50), nullable=True)
+    image_url = Column(String(300), nullable=True)
+    default_price = Column(Float, nullable=True)  # цена по умолчанию при добавлении в новую точку
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
 class ProductSlot(Base):
     __tablename__ = "product_slots"
     __table_args__ = (UniqueConstraint("machine_id", "slot_id", name="uq_machine_slot"),)
@@ -64,11 +77,15 @@ class ProductSlot(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     machine_id = Column(String(50), ForeignKey("vending_machines.machine_id"), nullable=False, index=True)
     slot_id = Column(Integer, nullable=False)          # номер слота на VMC (selection number)
+    # Ссылка на товар из каталога (может быть NULL — тогда слот со свободным названием).
+    product_id = Column(Integer, ForeignKey("products.id"), nullable=True)
+    # Денормализованные имя и фото — kiosk читает их прямо со слота, без join.
+    # При привязке товара копируются из Product и обновляются при его изменении.
     product_name = Column(String(100), nullable=False)
-    price = Column(Float, nullable=False)
+    image_url = Column(String(300), nullable=True)
+    price = Column(Float, nullable=False)              # цена именно на этой точке (per-point)
     stock_qty = Column(Integer, default=0)
     capacity = Column(Integer, default=10)
-    image_url = Column(String(300), nullable=True)
     is_active = Column(Boolean, default=True)
 
     machine = relationship("VendingMachine", back_populates="slots")
@@ -145,6 +162,7 @@ def _migrate():
     statements = [
         "ALTER TABLE vending_machines ADD COLUMN IF NOT EXISTS lat DOUBLE PRECISION",
         "ALTER TABLE vending_machines ADD COLUMN IF NOT EXISTS lng DOUBLE PRECISION",
+        "ALTER TABLE product_slots ADD COLUMN IF NOT EXISTS product_id INTEGER",
     ]
     with engine.begin() as conn:
         for stmt in statements:

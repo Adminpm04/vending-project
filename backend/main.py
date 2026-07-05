@@ -17,7 +17,7 @@ import secrets
 from database import (
     get_db, init_db, SessionLocal,
     VendingMachine, ProductSlot, VendingSession, Blacklist, SessionStatus,
-    AdminUser, AdminSession, AdminRole,
+    AdminUser, AdminSession, AdminRole, Product,
 )
 from jetqr import create_invoice, check_invoice, cancel_invoice
 from config import settings
@@ -44,6 +44,7 @@ async def _db(fn):
 @app.on_event("startup")
 async def startup():
     init_db()
+    os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
     await _db(_bootstrap_admin)
     asyncio.create_task(_ws_heartbeat())
 
@@ -605,11 +606,21 @@ async def set_machine_location(machine_id: str, data: dict, db: Session = Depend
 
 @app.post("/api/admin/machines/{machine_id}/slots", dependencies=[Depends(require_operator)])
 async def upsert_slot(machine_id: str, data: dict, db: Session = Depends(get_db)):
+    # Если передан product_id — берём имя и фото из каталога (денормализуем на слот),
+    # а цену/остаток задаём per-point из data (цена по умолчанию — из товара).
+    product = None
+    if data.get("product_id"):
+        product = db.query(Product).filter(Product.id == int(data["product_id"])).first()
+
     slot = db.query(ProductSlot).filter(
         ProductSlot.machine_id == machine_id,
         ProductSlot.slot_id == int(data["slot_id"]),
     ).first()
     if slot:
+        if product is not None:
+            slot.product_id = product.id
+            slot.product_name = product.name
+            slot.image_url = product.image_url
         for field in ("product_name", "price", "stock_qty", "capacity", "image_url", "is_active"):
             if field in data:
                 setattr(slot, field, data[field])
@@ -617,11 +628,12 @@ async def upsert_slot(machine_id: str, data: dict, db: Session = Depends(get_db)
         slot = ProductSlot(
             machine_id=machine_id,
             slot_id=int(data["slot_id"]),
-            product_name=data["product_name"],
-            price=float(data["price"]),
+            product_id=product.id if product else None,
+            product_name=product.name if product else data["product_name"],
+            image_url=product.image_url if product else data.get("image_url"),
+            price=float(data["price"]) if data.get("price") not in (None, "") else float(product.default_price or 0),
             stock_qty=int(data.get("stock_qty", 0)),
             capacity=int(data.get("capacity", 10)),
-            image_url=data.get("image_url"),
         )
         db.add(slot)
     db.commit()
@@ -635,11 +647,139 @@ async def list_slots(machine_id: str, db: Session = Depends(get_db)):
     return [
         {
             "slot_id": s.slot_id,
+            "product_id": s.product_id,
             "product_name": s.product_name,
+            "image_url": s.image_url,
             "price": s.price,
             "stock_qty": s.stock_qty,
             "capacity": s.capacity,
             "is_active": s.is_active,
+        }
+        for s in slots
+    ]
+
+
+# ─── PRODUCTS (каталог товаров) ──────────────────────────────────────────────
+
+@app.post("/api/admin/upload", dependencies=[Depends(require_operator)])
+async def upload_image(data: dict):
+    """Загрузка фото товара: JSON {filename, data_base64} → файл на диск → URL.
+    base64-в-JSON вместо multipart, чтобы не тащить python-multipart зависимостью."""
+    import base64
+    raw = data.get("data_base64") or ""
+    if "," in raw and raw.strip().startswith("data:"):
+        raw = raw.split(",", 1)[1]  # срезаем префикс data:image/...;base64,
+    try:
+        blob = base64.b64decode(raw, validate=True)
+    except Exception:
+        raise HTTPException(400, "invalid base64 data")
+    if not blob or len(blob) > settings.UPLOAD_MAX_BYTES:
+        raise HTTPException(400, f"empty or too large (max {settings.UPLOAD_MAX_BYTES} bytes)")
+
+    # Определяем расширение по сигнатуре файла — не доверяем присланному имени.
+    ext = None
+    if blob[:3] == b"\xff\xd8\xff":
+        ext = "jpg"
+    elif blob[:8] == b"\x89PNG\r\n\x1a\n":
+        ext = "png"
+    elif blob[:6] in (b"GIF87a", b"GIF89a"):
+        ext = "gif"
+    elif blob[:4] == b"RIFF" and blob[8:12] == b"WEBP":
+        ext = "webp"
+    if ext is None:
+        raise HTTPException(400, "unsupported image type (use JPG/PNG/GIF/WEBP)")
+
+    name = f"{secrets.token_hex(16)}.{ext}"
+    with open(os.path.join(settings.UPLOAD_DIR, name), "wb") as f:
+        f.write(blob)
+    return {"url": f"/uploads/{name}"}
+
+
+@app.get("/api/admin/products", dependencies=[Depends(require_viewer)])
+async def list_products(db: Session = Depends(get_db)):
+    from sqlalchemy import func
+    products = db.query(Product).order_by(Product.name).all()
+    # сколько точек продаёт каждый товар
+    counts = dict(
+        db.query(ProductSlot.product_id, func.count(func.distinct(ProductSlot.machine_id)))
+        .filter(ProductSlot.product_id.isnot(None))
+        .group_by(ProductSlot.product_id).all()
+    )
+    return [
+        {
+            "id": p.id, "name": p.name, "category": p.category,
+            "image_url": p.image_url, "default_price": p.default_price,
+            "points_count": int(counts.get(p.id, 0)),
+        }
+        for p in products
+    ]
+
+
+@app.post("/api/admin/products", dependencies=[Depends(require_operator)])
+async def create_product(data: dict, db: Session = Depends(get_db)):
+    name = (data.get("name") or "").strip()
+    if not name:
+        raise HTTPException(400, "name required")
+    p = Product(
+        name=name,
+        category=(data.get("category") or "").strip() or None,
+        image_url=data.get("image_url"),
+        default_price=float(data["default_price"]) if data.get("default_price") not in (None, "") else None,
+    )
+    db.add(p)
+    db.commit()
+    return {"id": p.id, "name": p.name}
+
+
+@app.post("/api/admin/products/{product_id}", dependencies=[Depends(require_operator)])
+async def update_product(product_id: int, data: dict, db: Session = Depends(get_db)):
+    p = db.query(Product).filter(Product.id == product_id).first()
+    if not p:
+        raise HTTPException(404, "product not found")
+    if "name" in data:
+        p.name = (data["name"] or "").strip() or p.name
+    if "category" in data:
+        p.category = (data["category"] or "").strip() or None
+    if "image_url" in data:
+        p.image_url = data["image_url"]
+    if "default_price" in data:
+        p.default_price = float(data["default_price"]) if data["default_price"] not in (None, "") else None
+    # Изменение имени/фото товара распространяем на все привязанные слоты
+    # (kiosk читает имя/фото со слота) — цену/остаток не трогаем.
+    if "name" in data or "image_url" in data:
+        for slot in db.query(ProductSlot).filter(ProductSlot.product_id == product_id).all():
+            slot.product_name = p.name
+            slot.image_url = p.image_url
+    db.commit()
+    return {"success": True}
+
+
+@app.delete("/api/admin/products/{product_id}", dependencies=[Depends(require_operator)])
+async def delete_product(product_id: int, db: Session = Depends(get_db)):
+    p = db.query(Product).filter(Product.id == product_id).first()
+    if not p:
+        raise HTTPException(404, "product not found")
+    # Слоты не удаляем — только отвязываем (товар пропадёт из каталога, но слот
+    # с текущими именем/ценой продолжит работать).
+    for slot in db.query(ProductSlot).filter(ProductSlot.product_id == product_id).all():
+        slot.product_id = None
+    db.delete(p)
+    db.commit()
+    return {"success": True}
+
+
+@app.get("/api/admin/products/{product_id}/placements", dependencies=[Depends(require_viewer)])
+async def product_placements(product_id: int, db: Session = Depends(get_db)):
+    """Где продаётся товар и по какой цене — для редактирования цены per-point."""
+    slots = db.query(ProductSlot).filter(ProductSlot.product_id == product_id).all()
+    machines = {m.machine_id: m for m in db.query(VendingMachine).all()}
+    return [
+        {
+            "machine_id": s.machine_id,
+            "machine_name": (machines.get(s.machine_id).name if machines.get(s.machine_id) else s.machine_id),
+            "slot_id": s.slot_id,
+            "price": s.price,
+            "stock_qty": s.stock_qty,
         }
         for s in slots
     ]
@@ -759,6 +899,9 @@ async def generate_qr(invoice_id: str):
 
 
 # ─── FRONTEND ────────────────────────────────────────────────────────────────
+
+os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
+app.mount("/uploads", StaticFiles(directory=settings.UPLOAD_DIR), name="uploads")
 
 frontend_dir = os.path.join(os.path.dirname(__file__), "..", "frontend")
 if os.path.isdir(frontend_dir):
