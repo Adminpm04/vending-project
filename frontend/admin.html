@@ -64,14 +64,18 @@
   .seg button{font-size:12.5px;font-weight:800;border:none;border-radius:9px;padding:8px 14px;cursor:pointer;transition:all .15s;background:transparent;color:var(--text2)}
   .seg button.active{background:linear-gradient(160deg,#A03050,#8B253B);color:#fff;box-shadow:0 4px 12px rgba(139,37,59,.35)}
   #toast{position:fixed;left:50%;bottom:26px;transform:translateX(-50%);z-index:80;background:rgba(17,17,17,.92);color:#F5F5F5;font-size:13.5px;font-weight:700;border-radius:999px;padding:12px 22px;box-shadow:0 16px 40px rgba(0,0,0,.35);backdrop-filter:blur(8px);animation:toastin .25s ease;white-space:nowrap}
-  /* Карта города (Leaflet) */
-  #leaflet-map{height:min(560px,70vh);border-radius:22px;border:1px solid var(--line);box-shadow:var(--card-sh);z-index:0}
-  .vq-pin{width:22px;height:22px;border-radius:50% 50% 50% 0;transform:rotate(-45deg);border:2.5px solid #fff;box-shadow:0 3px 8px rgba(0,0,0,.4)}
-  .leaflet-popup-content-wrapper{border-radius:14px}
-  .leaflet-popup-content{margin:12px 14px;font-family:'Manrope',sans-serif}
+  /* Карта города (Leaflet + CARTO — чистый стиль в духе Google Maps) */
+  #leaflet-map{height:min(600px,72vh);border-radius:22px;border:1px solid var(--line);box-shadow:var(--card-sh);z-index:0;background:var(--surf)}
+  .vq-pin-wrap{filter:drop-shadow(0 3px 4px rgba(0,0,0,.35))}
+  .vq-pin-wrap svg{display:block}
+  .leaflet-popup-content-wrapper{border-radius:16px;box-shadow:0 8px 30px rgba(0,0,0,.18)}
+  .leaflet-popup-content{margin:13px 15px;font-family:'Manrope',sans-serif}
+  .leaflet-container{font-family:'Manrope',sans-serif}
+  .leaflet-bar a{border-radius:8px!important}
+  .leaflet-control-zoom{border:none!important;box-shadow:0 2px 10px rgba(0,0,0,.15)}
   .map-panel{background:var(--surf);border:1px solid var(--line);border-radius:16px;box-shadow:var(--card-sh);padding:12px 14px}
-  [data-theme="dark"] .leaflet-tile{filter:brightness(.75) invert(.92) hue-rotate(180deg) saturate(.7)}
-  [data-theme="dark"] .leaflet-popup-content-wrapper,[data-theme="dark"] .leaflet-popup-tip{background:var(--surf);color:var(--text)}
+  [data-theme="dark"] .leaflet-popup-content-wrapper,[data-theme="dark"] .leaflet-popup-tip{background:#1B1B1B;color:var(--text)}
+  [data-theme="dark"] .leaflet-bar a{background:#1B1B1B;color:#F5F5F5;border-color:#2A2A2A}
 
   @media(max-width:900px){
     #side{display:none}
@@ -149,6 +153,7 @@ function toggleTheme(){
   const t = cur === 'dark' ? 'light':'dark';
   document.documentElement.setAttribute('data-theme', t);
   localStorage.setItem('vq_theme', t);
+  if(typeof applyTiles==='function' && leafletMap) applyTiles(); // сменить плитки карты под тему
 }
 initTheme();
 
@@ -410,28 +415,42 @@ function viewPts(){
 }
 function topAddPoint(){ return `<div style="display:flex;justify-content:flex-end;margin-bottom:16px"><button class="btn-accent" style="padding:12px 20px" onclick="addPoint()">+ Добавить точку</button></div>`; }
 
-// ── Карта города (Leaflet, OpenStreetMap) ──
-let leafletMap=null, markerLayer=null, placingMachineId=null;
-const DUSHANBE=[38.5737,68.7870];
+// ── Карта города (Leaflet + CARTO, стиль в духе Google Maps) ──
+let leafletMap=null, markerLayer=null, tileLayer=null, placingMachineId=null;
+const DUSHANBE=[38.5598,68.7870];
+const TILES={
+  light:'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
+  dark:'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png'
+};
+function applyTiles(){
+  if(!leafletMap) return;
+  const dark=document.documentElement.getAttribute('data-theme')==='dark';
+  if(tileLayer) leafletMap.removeLayer(tileLayer);
+  tileLayer=L.tileLayer(dark?TILES.dark:TILES.light,{
+    maxZoom:20, subdomains:'abcd', detectRetina:true,
+    attribution:'© OpenStreetMap © CARTO'}).addTo(leafletMap);
+  tileLayer.bringToBack();
+}
 function mountMap(){
   const el=document.getElementById('leaflet-map');
   if(!el || typeof L==='undefined') return;
-  leafletMap = L.map(el,{zoomControl:true,attributionControl:true}).setView(DUSHANBE,12);
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
-    maxZoom:19, attribution:'© OpenStreetMap'}).addTo(leafletMap);
+  leafletMap = L.map(el,{zoomControl:true,attributionControl:true,scrollWheelZoom:true}).setView(DUSHANBE,13);
+  applyTiles();
   markerLayer = L.layerGroup().addTo(leafletMap);
   leafletMap.on('click', onMapClick);
   syncMarkers();
-  // подгонка к точкам, если они есть
   const placed=S.machines.filter(m=>m.lat!=null&&m.lng!=null);
   if(placed.length){
     const b=L.latLngBounds(placed.map(m=>[m.lat,m.lng]));
-    leafletMap.fitBounds(b.pad(0.3),{maxZoom:15});
+    leafletMap.fitBounds(b.pad(0.35),{maxZoom:16});
   }
+  setTimeout(()=>leafletMap && leafletMap.invalidateSize(), 60); // корректный размер после вставки в DOM
 }
 function pinIcon(color){
-  return L.divIcon({className:'', html:`<div class="vq-pin" style="background:${color}"></div>`,
-    iconSize:[22,22], iconAnchor:[11,20], popupAnchor:[0,-18]});
+  const svg=`<div class="vq-pin-wrap"><svg width="30" height="40" viewBox="0 0 30 40" xmlns="http://www.w3.org/2000/svg">
+    <path d="M15 0C6.7 0 0 6.7 0 15c0 10.5 12.5 23 14.2 24.6a1.1 1.1 0 0 0 1.6 0C17.5 38 30 25.5 30 15 30 6.7 23.3 0 15 0z" fill="${color}" stroke="#fff" stroke-width="2.5"/>
+    <circle cx="15" cy="15" r="5.4" fill="#fff"/></svg></div>`;
+  return L.divIcon({className:'', html:svg, iconSize:[30,40], iconAnchor:[15,39], popupAnchor:[0,-36]});
 }
 function syncMarkers(){
   if(!markerLayer) return;
@@ -903,7 +922,7 @@ async function addBlack(){
   try{ await api('/api/admin/blacklist',{method:'POST',body:JSON.stringify({phone_number,reason})});
     S.blist.push({phone_number,reason}); toast('Номер заблокирован'); render(); }catch(e){ toast('Ошибка'); }
 }
-function setTheme(t){ document.documentElement.setAttribute('data-theme',t); localStorage.setItem('vq_theme',t); render(); }
+function setTheme(t){ document.documentElement.setAttribute('data-theme',t); localStorage.setItem('vq_theme',t); if(leafletMap) applyTiles(); render(); }
 
 // ── Автовход, если сессия сохранена ──
 if(TOKEN){
