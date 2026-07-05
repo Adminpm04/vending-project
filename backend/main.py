@@ -581,9 +581,26 @@ async def list_machines(db: Session = Depends(get_db)):
             "location": m.location,
             "is_active": m.is_active,
             "online": m.machine_id in machine_clients,
+            "lat": m.lat,
+            "lng": m.lng,
         }
         for m in machines
     ]
+
+
+@app.post("/api/admin/machines/{machine_id}/location", dependencies=[Depends(require_operator)])
+async def set_machine_location(machine_id: str, data: dict, db: Session = Depends(get_db)):
+    """Задать координаты точки на карте (клик по карте в админке)."""
+    m = db.query(VendingMachine).filter(VendingMachine.machine_id == machine_id).first()
+    if not m:
+        raise HTTPException(404, "machine not found")
+    try:
+        m.lat = float(data["lat"])
+        m.lng = float(data["lng"])
+    except (KeyError, TypeError, ValueError):
+        raise HTTPException(400, "lat and lng required")
+    db.commit()
+    return {"success": True}
 
 
 @app.post("/api/admin/machines/{machine_id}/slots", dependencies=[Depends(require_operator)])

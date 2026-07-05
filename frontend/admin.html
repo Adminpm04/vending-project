@@ -7,6 +7,8 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="">
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
 <style>
   *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
   html,body{height:100%}
@@ -62,6 +64,14 @@
   .seg button{font-size:12.5px;font-weight:800;border:none;border-radius:9px;padding:8px 14px;cursor:pointer;transition:all .15s;background:transparent;color:var(--text2)}
   .seg button.active{background:linear-gradient(160deg,#A03050,#8B253B);color:#fff;box-shadow:0 4px 12px rgba(139,37,59,.35)}
   #toast{position:fixed;left:50%;bottom:26px;transform:translateX(-50%);z-index:80;background:rgba(17,17,17,.92);color:#F5F5F5;font-size:13.5px;font-weight:700;border-radius:999px;padding:12px 22px;box-shadow:0 16px 40px rgba(0,0,0,.35);backdrop-filter:blur(8px);animation:toastin .25s ease;white-space:nowrap}
+  /* Карта города (Leaflet) */
+  #leaflet-map{height:min(560px,70vh);border-radius:22px;border:1px solid var(--line);box-shadow:var(--card-sh);z-index:0}
+  .vq-pin{width:22px;height:22px;border-radius:50% 50% 50% 0;transform:rotate(-45deg);border:2.5px solid #fff;box-shadow:0 3px 8px rgba(0,0,0,.4)}
+  .leaflet-popup-content-wrapper{border-radius:14px}
+  .leaflet-popup-content{margin:12px 14px;font-family:'Manrope',sans-serif}
+  .map-panel{background:var(--surf);border:1px solid var(--line);border-radius:16px;box-shadow:var(--card-sh);padding:12px 14px}
+  [data-theme="dark"] .leaflet-tile{filter:brightness(.75) invert(.92) hue-rotate(180deg) saturate(.7)}
+  [data-theme="dark"] .leaflet-popup-content-wrapper,[data-theme="dark"] .leaflet-popup-tip{background:var(--surf);color:var(--text)}
 
   @media(max-width:900px){
     #side{display:none}
@@ -267,6 +277,15 @@ function statOf(mid){ return (S.stats?.by_machine||[]).find(m=>m.machine_id===mi
 // ── Рендер ──
 function render(){
   const c = document.getElementById('content');
+  const mapOpen = S.tab==='pts' && ptsView==='map';
+  // Карта уже смонтирована и мы всё ещё на ней (напр. авто-рефреш раз в 15с) —
+  // не пересобираем DOM (это уничтожило бы Leaflet и сбросило зум/позицию),
+  // а только обновляем маркеры.
+  if(mapOpen && leafletMap && document.getElementById('leaflet-map')){
+    syncMarkers();
+    return;
+  }
+  if(leafletMap){ leafletMap.remove(); leafletMap=null; markerLayer=null; } // уходим с карты — чистим
   if(S.tab==='dash') c.innerHTML = viewDash();
   else if(S.tab==='pts') c.innerHTML = viewPts();
   else if(S.tab==='point') viewPoint(c);
@@ -274,6 +293,7 @@ function render(){
   else if(S.tab==='prod') viewProd(c);
   else if(S.tab==='stat') c.innerHTML = viewStat();
   else if(S.tab==='set') viewSet(c);
+  if(mapOpen) setTimeout(mountMap, 0);
 }
 
 function loadingBlock(){
@@ -359,40 +379,125 @@ function viewPts(){
         <div class="mini"><div class="k">Статус</div><div style="font-size:13px;font-weight:800;color:${dot};margin-top:2px">${m.online?'Онлайн':'Офлайн'}</div></div>
       </div></div>`;
   }).join('');
-  const markers = S.machines.map((m,i)=>{
-    const h=hashPos(m.machine_id); const dot=m.online?'#2E9E5B':'#D14343'; const anim=m.online?'glowdot':'glowdotred';
-    return `<div onclick="openPoint('${esc(m.machine_id)}')" style="position:absolute;left:${h.x}%;top:${h.y}%;transform:translate(-50%,-50%);display:flex;align-items:center;gap:7px;cursor:pointer">
-      <span style="width:15px;height:15px;border-radius:50%;background:${dot};border:2.5px solid #fff;box-shadow:0 3px 8px rgba(0,0,0,.3);animation:${anim} 2s infinite;flex:none"></span>
-      <span style="font-size:11.5px;font-weight:800;background:var(--surf);border:1px solid var(--line);border-radius:999px;padding:4px 10px;box-shadow:var(--card-sh);white-space:nowrap">${esc(m.name||m.machine_id)}</span></div>`;
-  }).join('');
+  const unplaced = S.machines.filter(m=>m.lat==null||m.lng==null);
   const onCount=S.machines.filter(m=>m.online).length, offCount=S.machines.length-onCount;
-  const map = `<div style="position:relative;height:520px;border-radius:22px;overflow:hidden;border:1px solid var(--line);box-shadow:var(--card-sh);background-color:var(--surf);background-image:linear-gradient(var(--line) 1px,transparent 1px),linear-gradient(90deg,var(--line) 1px,transparent 1px);background-size:72px 72px;background-position:center">
-    <div style="position:absolute;left:-10%;top:44%;width:120%;height:16px;background:var(--bg);border-top:1px solid var(--line);border-bottom:1px solid var(--line);transform:rotate(-7deg)"></div>
-    <div style="position:absolute;left:56%;top:-10%;width:16px;height:120%;background:var(--bg);border-left:1px solid var(--line);border-right:1px solid var(--line);transform:rotate(9deg)"></div>
-    ${markers}
-    <div style="position:absolute;left:14px;bottom:14px;display:flex;gap:12px;background:var(--glass);backdrop-filter:blur(10px);border:1px solid var(--line);border-radius:999px;padding:8px 16px;font-size:12px;font-weight:700">
-      <span style="display:flex;align-items:center;gap:6px"><i style="width:9px;height:9px;border-radius:50%;background:#2E9E5B;display:block"></i>Онлайн · ${onCount}</span>
-      <span style="display:flex;align-items:center;gap:6px"><i style="width:9px;height:9px;border-radius:50%;background:#D14343;display:block"></i>Офлайн · ${offCount}</span></div>
-    <div style="position:absolute;right:14px;top:14px;font-size:11.5px;font-weight:700;color:var(--text2);background:var(--glass);backdrop-filter:blur(10px);border:1px solid var(--line);border-radius:999px;padding:6px 13px">схема сети</div></div>`;
+  const placedCount = S.machines.length - unplaced.length;
+  const unplacedPanel = unplaced.length ? `
+    <div class="map-panel" style="margin-top:12px">
+      <div style="font-size:13px;font-weight:800;margin-bottom:2px">Без координат на карте · ${unplaced.length}</div>
+      <div class="sub" style="margin-bottom:10px">${canEdit()?'Нажмите «разместить», затем кликните нужное место на карте':'Точки без координат пока не показаны на карте'}</div>
+      <div style="display:flex;flex-wrap:wrap;gap:8px">
+        ${unplaced.map(m=>`<span style="display:inline-flex;align-items:center;gap:8px;font-size:12.5px;font-weight:700;background:var(--bg);border:1px solid var(--line);border-radius:999px;padding:6px 8px 6px 12px">
+          ${esc(m.name||m.machine_id)}
+          ${canEdit()?`<button onclick="startPlacing('${esc(m.machine_id)}')" style="font-size:11.5px;font-weight:800;color:#fff;background:linear-gradient(160deg,#A03050,#8B253B);border:none;border-radius:999px;padding:5px 11px;cursor:pointer">разместить</button>`:''}
+        </span>`).join('')}
+      </div>
+    </div>` : '';
+  const legend = `<div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap">
+      <span class="sub">На карте: ${placedCount} из ${S.machines.length}</span>
+      <span style="display:flex;align-items:center;gap:6px;font-size:12px;font-weight:700"><i style="width:9px;height:9px;border-radius:50%;background:#2E9E5B;display:block"></i>Онлайн · ${onCount}</span>
+      <span style="display:flex;align-items:center;gap:6px;font-size:12px;font-weight:700"><i style="width:9px;height:9px;border-radius:50%;background:#D14343;display:block"></i>Офлайн · ${offCount}</span>
+      <span id="place-hint" class="sub" style="color:var(--accent2);font-weight:800"></span></div>`;
+  const mapBlock = `<div id="leaflet-map"></div>${legend}${unplacedPanel}`;
   return `<div style="display:flex;flex-direction:column;gap:16px;animation:fadeup .35s ease">
     <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
       <div class="seg"><button class="${ptsView==='list'?'active':''}" onclick="ptsView='list';render()">Список</button><button class="${ptsView==='map'?'active':''}" onclick="ptsView='map';render()">Карта города</button></div>
       <div style="flex:1"></div>
       ${canEdit() ? `<button class="btn-accent" style="padding:12px 20px" onclick="addPoint()">+ Добавить точку</button>` : ''}
     </div>
-    ${ptsView==='list' ? `<div class="cards-pts">${cards}</div>` : map}
+    ${ptsView==='list' ? `<div class="cards-pts">${cards}</div>` : mapBlock}
   </div>`;
 }
 function topAddPoint(){ return `<div style="display:flex;justify-content:flex-end;margin-bottom:16px"><button class="btn-accent" style="padding:12px 20px" onclick="addPoint()">+ Добавить точку</button></div>`; }
-function hashPos(s){ let h=0; for(const c of s) h=(h*31+c.charCodeAt(0))&0xffff; return {x:12+(h%76), y:12+((h>>4)%70)}; }
 
+// ── Карта города (Leaflet, OpenStreetMap) ──
+let leafletMap=null, markerLayer=null, placingMachineId=null;
+const DUSHANBE=[38.5737,68.7870];
+function mountMap(){
+  const el=document.getElementById('leaflet-map');
+  if(!el || typeof L==='undefined') return;
+  leafletMap = L.map(el,{zoomControl:true,attributionControl:true}).setView(DUSHANBE,12);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
+    maxZoom:19, attribution:'© OpenStreetMap'}).addTo(leafletMap);
+  markerLayer = L.layerGroup().addTo(leafletMap);
+  leafletMap.on('click', onMapClick);
+  syncMarkers();
+  // подгонка к точкам, если они есть
+  const placed=S.machines.filter(m=>m.lat!=null&&m.lng!=null);
+  if(placed.length){
+    const b=L.latLngBounds(placed.map(m=>[m.lat,m.lng]));
+    leafletMap.fitBounds(b.pad(0.3),{maxZoom:15});
+  }
+}
+function pinIcon(color){
+  return L.divIcon({className:'', html:`<div class="vq-pin" style="background:${color}"></div>`,
+    iconSize:[22,22], iconAnchor:[11,20], popupAnchor:[0,-18]});
+}
+function syncMarkers(){
+  if(!markerLayer) return;
+  markerLayer.clearLayers();
+  for(const m of S.machines){
+    if(m.lat==null||m.lng==null) continue;
+    const st=statOf(m.machine_id); const color=m.online?'#2E9E5B':'#D14343';
+    const mk=L.marker([m.lat,m.lng],{icon:pinIcon(color), draggable:canEdit()}).addTo(markerLayer);
+    mk.bindPopup(`<div style="min-width:150px">
+      <div style="font-weight:800;font-size:14px;margin-bottom:2px">${esc(m.name||m.machine_id)}</div>
+      <div style="color:#888;font-size:12px;margin-bottom:6px">${esc(m.location||'')}</div>
+      <div style="font-size:12px;margin-bottom:2px"><b style="color:${color}">${m.online?'Онлайн':'Офлайн'}</b> · выручка ${fmt(st.revenue)} · ${st.sales} прод.</div>
+      <button onclick="openPoint('${esc(m.machine_id)}')" style="margin-top:6px;font-size:12px;font-weight:800;color:#fff;background:linear-gradient(160deg,#A03050,#8B253B);border:none;border-radius:9px;padding:7px 14px;cursor:pointer">Открыть →</button>
+    </div>`);
+    if(canEdit()){
+      mk.on('dragend', e=>{ const p=e.target.getLatLng(); saveLocation(m.machine_id,p.lat,p.lng,true); });
+    }
+  }
+}
+function startPlacing(mid){
+  placingMachineId=mid;
+  const h=document.getElementById('place-hint');
+  const m=S.machines.find(x=>x.machine_id===mid);
+  if(h) h.textContent=`Кликните на карте, чтобы разместить «${(m&&m.name)||mid}»`;
+  if(leafletMap) leafletMap.getContainer().style.cursor='crosshair';
+}
+function onMapClick(e){
+  if(!placingMachineId || !canEdit()) return;
+  saveLocation(placingMachineId, e.latlng.lat, e.latlng.lng, false);
+  placingMachineId=null;
+  if(leafletMap) leafletMap.getContainer().style.cursor='';
+  const h=document.getElementById('place-hint'); if(h) h.textContent='';
+}
+async function saveLocation(mid, lat, lng, isDrag){
+  try{
+    await api(`/api/admin/machines/${encodeURIComponent(mid)}/location`,{method:'POST',body:JSON.stringify({lat,lng})});
+    const m=S.machines.find(x=>x.machine_id===mid); if(m){ m.lat=lat; m.lng=lng; }
+    toast('Координаты сохранены');
+    if(!isDrag){ // новая точка размещена — перерисуем панель/маркеры
+      const c=document.getElementById('content');
+      // маркеры обновим, а панель «без координат» пересоберём мягко
+      syncMarkers();
+      // обновить панель снизу (список неразмещённых) без пересборки карты
+      refreshUnplacedPanel();
+    }
+  }catch(e){ toast('Не удалось сохранить'); }
+}
+function refreshUnplacedPanel(){
+  // Перерисовать только легенду и панель под картой, не трогая сам Leaflet.
+  const wrap=document.getElementById('leaflet-map')?.parentElement;
+  if(!wrap) return;
+  // проще всего: если панель есть — перерисуем весь блок точек кроме карты через повторный вызов viewPts,
+  // но чтобы не убить карту, обновим только внешние элементы вручную.
+  const unplaced=S.machines.filter(m=>m.lat==null||m.lng==null);
+  const hintPanel=wrap.querySelector('.map-panel');
+  if(unplaced.length===0 && hintPanel){ hintPanel.remove(); }
+}
+
+function rebuildPts(){ if(leafletMap){ leafletMap.remove(); leafletMap=null; markerLayer=null; } render(); }
 async function addPoint(){
   const machine_id = prompt('ID автомата (например VND-002):'); if(!machine_id) return;
   const name = prompt('Название (например №2 · ЦУМ):')||'';
   const location = prompt('Локация:')||'';
   try{
     const r = await api('/api/admin/machines',{method:'POST',body:JSON.stringify({machine_id,name,location})});
-    await refreshCore(); render();
+    await refreshCore(); rebuildPts();
     alert('Точка создана.\n\nТокен контроллера (сохраните — показывается один раз):\n\n'+r.secret_token);
   }catch(e){ toast('Не удалось создать точку'); }
 }

@@ -45,6 +45,9 @@ class VendingMachine(Base):
     location = Column(String(200), nullable=True)
     secret_token = Column(String(100), nullable=False)
     is_active = Column(Boolean, default=True)
+    # Координаты на карте города (задаются кликом по карте в админке).
+    lat = Column(Float, nullable=True)
+    lng = Column(Float, nullable=True)
     # Отдельные реквизиты JetQR на точку (разделение статистики/денег).
     # Если NULL — используются значения из settings.
     jetqr_store_id = Column(String(50), nullable=True)
@@ -131,3 +134,21 @@ def get_db():
 
 def init_db():
     Base.metadata.create_all(bind=engine)
+    _migrate()
+
+
+def _migrate():
+    """Лёгкие миграции для колонок, добавленных после первого деплоя.
+    create_all() не изменяет существующие таблицы, поэтому добавляем недостающие
+    колонки вручную (Postgres поддерживает ADD COLUMN IF NOT EXISTS)."""
+    from sqlalchemy import text
+    statements = [
+        "ALTER TABLE vending_machines ADD COLUMN IF NOT EXISTS lat DOUBLE PRECISION",
+        "ALTER TABLE vending_machines ADD COLUMN IF NOT EXISTS lng DOUBLE PRECISION",
+    ]
+    with engine.begin() as conn:
+        for stmt in statements:
+            try:
+                conn.execute(text(stmt))
+            except Exception:
+                pass
