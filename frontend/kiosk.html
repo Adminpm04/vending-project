@@ -101,7 +101,7 @@
     <div class="qr"><img id="qr-img" alt="QR"></div>
     <div class="pay-hint">Отсканируйте QR-код любым банковским приложением</div>
     <div class="timer"><span class="d"></span><span class="t" id="timer-t">2:00</span></div>
-    <button class="btn-ghost" onclick="resetFlow()">Отмена</button>
+    <button class="btn-ghost" onclick="cancelPayment()">Отмена</button>
   </div>
 </div>
 
@@ -156,6 +156,7 @@ let session = null, pollTimer = null, countdownTimer = null, ws = null;
 const PAY_SECONDS_FALLBACK = 120; // если сервер не прислал payment_timeout
 
 function fmtPrice(v) { return (v % 1 ? v.toFixed(2).replace('.', ',') : v) + ' c.'; }
+function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 function el(id) { return document.getElementById(id); }
 function show(id) { el(id).classList.remove('hidden'); }
 function hideAll() { ['ov-pay','ov-disp','ov-ok','ov-err','ov-off'].forEach(i => el(i).classList.add('hidden')); }
@@ -183,16 +184,16 @@ async function loadCatalog() {
       const div = document.createElement('div');
       div.className = 'card' + (p.available ? '' : ' oos');
       const media = p.image_url
-        ? `<img src="${p.image_url}" alt="">`
+        ? `<img src="${esc(p.image_url)}" alt="">`
         : `<div class="ph"><span>фото товара</span></div><div class="shadow"></div>`;
       div.innerHTML = `
         <div class="ped">${media}
           ${p.available ? '' : '<div class="oosbadge"><span>Нет в наличии</span></div>'}
         </div>
-        <div class="name">${p.name}</div>
+        <div class="name">${esc(p.name)}</div>
         <div class="row">
           <span class="price">${fmtPrice(p.price)}</span>
-          <span class="slot">Слот ${p.slot_id}</span>
+          <span class="slot">Слот ${esc(p.slot_id)}</span>
         </div>`;
       if (p.available) div.onclick = () => buy(p);
       cat.appendChild(div);
@@ -229,11 +230,21 @@ function startCountdown(sec) {
   clearInterval(countdownTimer);
   const upd = () => {
     el('timer-t').textContent = Math.floor(sec/60) + ':' + String(sec%60).padStart(2,'0');
-    if (sec <= 0) resetFlow();
+    if (sec <= 0) cancelPayment();
     sec--;
   };
   upd();
   countdownTimer = setInterval(upd, 1000);
+}
+
+// Отмена оплаты (кнопка или истёкший отсчёт): закрываем сессию и на сервере,
+// иначе он ждёт оплату ещё до 5 минут — поздний платёж выдал бы товар
+// при уже сброшенном экране.
+function cancelPayment() {
+  if (session) {
+    fetch(`/api/kiosk/session/${session.session_id}/cancel`, {method: 'POST'}).catch(() => {});
+  }
+  resetFlow();
 }
 
 async function checkStatus() {

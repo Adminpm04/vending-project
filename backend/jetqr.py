@@ -134,7 +134,8 @@ async def cancel_invoice(invoice_id: str, transaction_id: str,
                 json=payload,
             )
             data = response.json()
-            if data.get("type") == "SUCCESS" or data.get("code") == 200:
+            # code, как и в check_invoice, может прийти числом или строкой.
+            if data.get("type") == "SUCCESS" or str(data.get("code")) == "200":
                 return {"success": True, "data": data}
             logger.warning(f"cancel_invoice attempt {attempt+1} failed: {data}")
         except Exception as e:

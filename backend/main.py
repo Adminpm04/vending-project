@@ -12,6 +12,7 @@ from datetime import datetime
 import asyncio
 import json
 import os
+import re
 import secrets
 
 from database import (
@@ -84,7 +85,10 @@ async def _ws_heartbeat():
                 try:
                     await ws.send_text('{"type":"ping"}')
                 except Exception:
-                    lst.remove(ws)
+                    # kiosk_ws мог удалить ws параллельно — remove() тогда бросил бы
+                    # ValueError и убил бы весь heartbeat-цикл.
+                    if ws in lst:
+                        lst.remove(ws)
 
 
 # ─── KIOSK API (планшет: каталог, покупка) ───────────────────────────────────
@@ -123,7 +127,10 @@ async def kiosk_products(machine_id: str, db: Session = Depends(get_db)):
 @app.post("/api/kiosk/{machine_id}/buy")
 async def kiosk_buy(machine_id: str, data: dict, db: Session = Depends(get_db)):
     """Клиент выбрал товар: создаём сессию + инвойс, возвращаем QR."""
-    slot_id = int(data["slot_id"])
+    try:
+        slot_id = int(data["slot_id"])
+    except (KeyError, TypeError, ValueError):
+        raise HTTPException(400, "slot_id required")
 
     machine = db.query(VendingMachine).filter(
         VendingMachine.machine_id == machine_id,
@@ -191,6 +198,24 @@ async def kiosk_session_status(session_id: int, db: Session = Depends(get_db)):
     if not s:
         raise HTTPException(404, "session not found")
     return {"session_id": s.id, "status": s.status, "error": s.error}
+
+
+@app.post("/api/kiosk/session/{session_id}/cancel")
+async def kiosk_session_cancel(session_id: int, db: Session = Depends(get_db)):
+    """Клиент нажал «Отмена» на экране оплаты. Пока сессия pending — закрываем её,
+    чтобы сервер перестал принимать оплату по этому QR (иначе поллинг ждёт ещё
+    до 5 минут и поздняя оплата выдала бы товар при сброшенном экране).
+    Если оплата уже прошла (не pending) — отменять поздно, флоу продолжается."""
+    s = db.query(VendingSession).filter(VendingSession.id == session_id).first()
+    if not s:
+        raise HTTPException(404, "session not found")
+    if s.status != SessionStatus.pending:
+        return {"cancelled": False, "status": s.status}
+    s.status = SessionStatus.expired
+    s.error = "cancelled by customer"
+    s.closed_at = datetime.utcnow()
+    db.commit()
+    return {"cancelled": True, "status": s.status}
 
 
 # ─── PAYMENT FLOW ────────────────────────────────────────────────────────────
@@ -581,9 +606,15 @@ async def delete_user(user_id: int, me: AdminUser = Depends(require_admin), db: 
 
 @app.post("/api/admin/machines", dependencies=[Depends(require_operator)])
 async def add_machine(data: dict, db: Session = Depends(get_db)):
+    machine_id = (data.get("machine_id") or "").strip()
+    # machine_id попадает в URL киоска и путь WebSocket — только безопасные символы.
+    if not re.fullmatch(r"[A-Za-z0-9_-]{1,50}", machine_id):
+        raise HTTPException(400, "machine_id: 1-50 chars, only letters, digits, '-' and '_'")
+    if db.query(VendingMachine).filter(VendingMachine.machine_id == machine_id).first():
+        raise HTTPException(409, "machine_id already exists")
     token = secrets.token_urlsafe(32)
     m = VendingMachine(
-        machine_id=data["machine_id"],
+        machine_id=machine_id,
         name=data.get("name"),
         location=data.get("location"),
         secret_token=token,
@@ -630,14 +661,18 @@ async def set_machine_location(machine_id: str, data: dict, db: Session = Depend
 
 @app.post("/api/admin/machines/{machine_id}/slots", dependencies=[Depends(require_operator)])
 async def upsert_slot(machine_id: str, data: dict, db: Session = Depends(get_db)):
-    if data.get("slot_id") in (None, ""):
+    try:
+        slot_id = int(data["slot_id"])
+    except (KeyError, TypeError, ValueError):
         raise HTTPException(400, "slot_id required")
-    slot_id = int(data["slot_id"])
     # Если передан product_id — берём имя и фото из каталога (денормализуем на слот),
     # а цену/остаток задаём per-point из data (цена по умолчанию — из товара).
     product = None
     if data.get("product_id"):
-        product = db.query(Product).filter(Product.id == int(data["product_id"])).first()
+        try:
+            product = db.query(Product).filter(Product.id == int(data["product_id"])).first()
+        except (TypeError, ValueError):
+            raise HTTPException(400, "invalid product_id")
 
     slot = db.query(ProductSlot).filter(
         ProductSlot.machine_id == machine_id,
@@ -655,16 +690,19 @@ async def upsert_slot(machine_id: str, data: dict, db: Session = Depends(get_db)
         name = product.name if product else (data.get("product_name") or "").strip()
         if not name:
             raise HTTPException(400, "product_id or product_name required for a new slot")
-        slot = ProductSlot(
-            machine_id=machine_id,
-            slot_id=slot_id,
-            product_id=product.id if product else None,
-            product_name=name,
-            image_url=product.image_url if product else data.get("image_url"),
-            price=float(data["price"]) if data.get("price") not in (None, "") else float((product.default_price if product else 0) or 0),
-            stock_qty=int(data.get("stock_qty", 0)),
-            capacity=int(data.get("capacity", 10)),
-        )
+        try:
+            slot = ProductSlot(
+                machine_id=machine_id,
+                slot_id=slot_id,
+                product_id=product.id if product else None,
+                product_name=name,
+                image_url=product.image_url if product else data.get("image_url"),
+                price=float(data["price"]) if data.get("price") not in (None, "") else float((product.default_price if product else 0) or 0),
+                stock_qty=int(data.get("stock_qty", 0)),
+                capacity=int(data.get("capacity", 10)),
+            )
+        except (TypeError, ValueError):
+            raise HTTPException(400, "invalid numeric value in price/stock_qty/capacity")
         db.add(slot)
     db.commit()
     return {"success": True}
@@ -750,11 +788,15 @@ async def create_product(data: dict, db: Session = Depends(get_db)):
     name = (data.get("name") or "").strip()
     if not name:
         raise HTTPException(400, "name required")
+    try:
+        default_price = float(data["default_price"]) if data.get("default_price") not in (None, "") else None
+    except (TypeError, ValueError):
+        raise HTTPException(400, "invalid default_price")
     p = Product(
         name=name,
         category=(data.get("category") or "").strip() or None,
         image_url=data.get("image_url"),
-        default_price=float(data["default_price"]) if data.get("default_price") not in (None, "") else None,
+        default_price=default_price,
     )
     db.add(p)
     db.commit()
@@ -773,7 +815,10 @@ async def update_product(product_id: int, data: dict, db: Session = Depends(get_
     if "image_url" in data:
         p.image_url = data["image_url"]
     if "default_price" in data:
-        p.default_price = float(data["default_price"]) if data["default_price"] not in (None, "") else None
+        try:
+            p.default_price = float(data["default_price"]) if data["default_price"] not in (None, "") else None
+        except (TypeError, ValueError):
+            raise HTTPException(400, "invalid default_price")
     # Изменение имени/фото товара распространяем на все привязанные слоты
     # (kiosk читает имя/фото со слота) — цену/остаток не трогаем.
     if "name" in data or "image_url" in data:
@@ -913,9 +958,34 @@ async def force_dispense(machine_id: str, data: dict, user: AdminUser = Depends(
     return {"success": result["ok"], "message": result["message"], "session_id": session_id}
 
 
+@app.get("/api/admin/blacklist", dependencies=[Depends(require_admin)])
+async def list_blacklist(db: Session = Depends(get_db)):
+    rows = db.query(Blacklist).order_by(Blacklist.added_at.desc()).all()
+    return [
+        {"id": b.id, "phone_number": b.phone_number, "reason": b.reason,
+         "added_at": b.added_at.isoformat()}
+        for b in rows
+    ]
+
+
 @app.post("/api/admin/blacklist", dependencies=[Depends(require_admin)])
 async def add_blacklist(data: dict, db: Session = Depends(get_db)):
-    db.add(Blacklist(phone_number=data["phone_number"], reason=data.get("reason")))
+    phone = (data.get("phone_number") or "").strip()
+    if not phone:
+        raise HTTPException(400, "phone_number required")
+    if db.query(Blacklist).filter(Blacklist.phone_number == phone).first():
+        raise HTTPException(409, "phone already blacklisted")
+    db.add(Blacklist(phone_number=phone, reason=data.get("reason")))
+    db.commit()
+    return {"success": True}
+
+
+@app.delete("/api/admin/blacklist/{entry_id}", dependencies=[Depends(require_admin)])
+async def remove_blacklist(entry_id: int, db: Session = Depends(get_db)):
+    b = db.query(Blacklist).filter(Blacklist.id == entry_id).first()
+    if not b:
+        raise HTTPException(404, "entry not found")
+    db.delete(b)
     db.commit()
     return {"success": True}
 

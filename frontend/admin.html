@@ -530,7 +530,11 @@ async function addPoint(){
     const r = await api('/api/admin/machines',{method:'POST',body:JSON.stringify({machine_id,name,location})});
     await refreshCore(); rebuildPts();
     alert('Точка создана.\n\nТокен контроллера (сохраните — показывается один раз):\n\n'+r.secret_token);
-  }catch(e){ toast('Не удалось создать точку'); }
+  }catch(e){
+    if(e.message==='machine_id already exists') toast('Точка с таким ID уже есть');
+    else if((e.message||'').startsWith('machine_id:')) toast('ID: только буквы, цифры, «-» и «_»');
+    else toast('Не удалось создать точку');
+  }
 }
 function openPoint(mid){ S.pointId=mid; go('point'); }
 
@@ -880,11 +884,13 @@ function exportCSV(){
 async function viewSet(c){
   c.innerHTML = loadingBlock();
   try{ S.users = await api('/api/admin/users'); }catch(e){ S.users = []; }
+  try{ S.blist = await api('/api/admin/blacklist'); }catch(e){ S.blist = []; }
   const theme=document.documentElement.getAttribute('data-theme');
   const seg=(on)=>`font-size:12.5px;font-weight:800;border:none;border-radius:9px;padding:8px 14px;cursor:pointer;${on?'background:linear-gradient(160deg,#A03050,#8B253B);color:#fff;box-shadow:0 4px 12px rgba(139,37,59,.35)':'background:transparent;color:var(--text2)'}`;
-  const bl = S.blist.map((b,i)=>`<div style="display:flex;align-items:center;gap:12px;padding:10px 2px;border-bottom:1px solid var(--line)">
+  const bl = S.blist.map(b=>`<div style="display:flex;align-items:center;gap:12px;padding:10px 2px;border-bottom:1px solid var(--line)">
     <span style="font-size:13.5px;font-weight:800;font-variant-numeric:tabular-nums">${esc(b.phone_number)}</span>
-    <span class="sub" style="flex:1">${esc(b.reason||'')}</span></div>`).join('') || `<div class="sub" style="padding:8px 2px">Список пуст</div>`;
+    <span class="sub" style="flex:1">${esc(b.reason||'')}</span>
+    <button onclick="removeBlack(${b.id},'${esc(b.phone_number)}')" style="border:1.5px solid var(--line);background:transparent;color:var(--text2);font-size:12px;font-weight:700;border-radius:999px;padding:6px 12px;cursor:pointer" onmouseover="this.style.color='#2E9E5B';this.style.borderColor='#2E9E5B'" onmouseout="this.style.color='var(--text2)';this.style.borderColor='var(--line)'">Разблокировать</button></div>`).join('') || `<div class="sub" style="padding:8px 2px">Список пуст</div>`;
   const roleChip = r => { const c={admin:'#8B253B',operator:'#2E9E5B',viewer:'#9A9A9A'}[r]||'#9A9A9A';
     return `<span style="display:inline-flex;align-items:center;font-size:11px;font-weight:800;color:${c};background:${c}1f;border-radius:999px;padding:5px 10px;border:1px solid ${c}55">${ROLE_LABEL[r]||r}</span>`; };
   const users = S.users.map(u=>`<div style="display:flex;align-items:center;gap:12px;padding:11px 2px;border-bottom:1px solid var(--line)">
@@ -954,7 +960,13 @@ async function addBlack(){
   const reason=document.getElementById('bl-reason').value.trim();
   if(!phone_number){ toast('Введите номер'); return; }
   try{ await api('/api/admin/blacklist',{method:'POST',body:JSON.stringify({phone_number,reason})});
-    S.blist.push({phone_number,reason}); toast('Номер заблокирован'); render(); }catch(e){ toast('Ошибка'); }
+    toast('Номер заблокирован'); render(); }
+  catch(e){ toast(e.message==='phone already blacklisted' ? 'Номер уже в списке' : 'Ошибка'); }
+}
+async function removeBlack(id, phone){
+  if(!confirm(`Убрать «${phone}» из чёрного списка?`)) return;
+  try{ await api(`/api/admin/blacklist/${id}`,{method:'DELETE'}); toast('Номер разблокирован'); render(); }
+  catch(e){ toast('Не удалось удалить'); }
 }
 function setTheme(t){ document.documentElement.setAttribute('data-theme',t); localStorage.setItem('vq_theme',t); if(leafletMap) applyTiles(); render(); }
 
