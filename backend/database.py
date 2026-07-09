@@ -67,6 +67,11 @@ class Product(Base):
     category = Column(String(50), nullable=True)
     image_url = Column(String(300), nullable=True)
     default_price = Column(Float, nullable=True)  # цена по умолчанию при добавлении в новую точку
+    # Стандартный ассортимент сети: при создании новой точки все такие товары
+    # автоматически ставятся в слоты (с этой ценой) — большинство точек продают
+    # один и тот же набор. Точечные исключения — снять галку у конкретного
+    # товара или просто удалить/заменить слот на нужной точке вручную.
+    in_default_assortment = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
 
@@ -163,6 +168,7 @@ def _migrate():
         "ALTER TABLE vending_machines ADD COLUMN IF NOT EXISTS lat DOUBLE PRECISION",
         "ALTER TABLE vending_machines ADD COLUMN IF NOT EXISTS lng DOUBLE PRECISION",
         "ALTER TABLE product_slots ADD COLUMN IF NOT EXISTS product_id INTEGER",
+        "ALTER TABLE products ADD COLUMN IF NOT EXISTS in_default_assortment BOOLEAN DEFAULT TRUE",
     ]
     with engine.begin() as conn:
         for stmt in statements:

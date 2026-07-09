@@ -649,6 +649,17 @@ async def add_machine(data: dict, db: Session = Depends(get_db)):
         jetqr_terminal_id=data.get("jetqr_terminal_id"),
     )
     db.add(m)
+    # Стандартный ассортимент сети — большинство точек продают один и тот же
+    # набор товаров, поэтому сразу заполняем слоты по умолчанию (с ценой
+    # default_price). Точечные исключения правятся потом руками на точке.
+    defaults = db.query(Product).filter(
+        Product.in_default_assortment == True).order_by(Product.id).all()
+    for i, p in enumerate(defaults, start=1):
+        db.add(ProductSlot(
+            machine_id=machine_id, slot_id=i, product_id=p.id,
+            product_name=p.name, image_url=p.image_url,
+            price=p.default_price or 0, stock_qty=0, capacity=10,
+        ))
     db.commit()
     # Токен показывается один раз — прошивается в контроллер точки
     return {"machine_id": m.machine_id, "secret_token": token}
@@ -819,6 +830,7 @@ async def list_products(db: Session = Depends(get_db)):
         {
             "id": p.id, "name": p.name, "category": p.category,
             "image_url": p.image_url, "default_price": p.default_price,
+            "in_default_assortment": p.in_default_assortment,
             "points_count": int(counts.get(p.id, 0)),
         }
         for p in products
@@ -839,6 +851,7 @@ async def create_product(data: dict, db: Session = Depends(get_db)):
         category=(data.get("category") or "").strip() or None,
         image_url=data.get("image_url"),
         default_price=default_price,
+        in_default_assortment=bool(data.get("in_default_assortment", True)),
     )
     db.add(p)
     db.commit()
@@ -856,6 +869,8 @@ async def update_product(product_id: int, data: dict, db: Session = Depends(get_
         p.category = (data["category"] or "").strip() or None
     if "image_url" in data:
         p.image_url = data["image_url"]
+    if "in_default_assortment" in data:
+        p.in_default_assortment = bool(data["in_default_assortment"])
     if "default_price" in data:
         try:
             p.default_price = float(data["default_price"]) if data["default_price"] not in (None, "") else None
