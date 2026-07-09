@@ -18,6 +18,7 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import com.vendingqr.kiosk.Prefs
 import com.vendingqr.kiosk.R
+import com.vendingqr.kiosk.UpdateChecker
 import com.vendingqr.kiosk.databinding.ActivityMainBinding
 import com.vendingqr.kiosk.serial.VmcControllerService
 
