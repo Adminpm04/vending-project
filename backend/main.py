@@ -442,7 +442,16 @@ async def machine_ws(websocket: WebSocket, machine_id: str):
                 VendingMachine.machine_id == machine_id,
                 VendingMachine.is_active == True,
             ).first()
-            return m is not None and secrets.compare_digest(m.secret_token, token or "")
+            if m is None:
+                return False
+            # Токен набирается руками на экранной клавиатуре: автозамена дефиса
+            # на другое тире (—/–) или случайная смена регистра — обычное дело
+            # и не должны считаться неверным токеном. Сверяем только буквы/цифры,
+            # без разделителя и регистра. compare_digest на голых ASCII-строках —
+            # никогда не бросает TypeError, в отличие от сырых строк с юникодом.
+            expected = _normalize_token(m.secret_token)
+            got = _normalize_token(token or "")
+            return secrets.compare_digest(expected.encode(), got.encode())
         finally:
             db.close()
 
@@ -613,6 +622,13 @@ _TOKEN_LEN = 10  # ~48 бит энтропии — с запасом для од
 def _generate_machine_token() -> str:
     code = "".join(secrets.choice(_TOKEN_ALPHABET) for _ in range(_TOKEN_LEN))
     return code[:5] + "-" + code[5:]  # XXXXX-XXXXX — легче читать и набирать
+
+
+def _normalize_token(s: str) -> str:
+    """Для сверки токена при подключении контроллера: дефис — просто
+    визуальный разделитель, не часть секрета, а регистр клавиатура может
+    менять сама. Оставляем только буквы/цифры и приводим к верхнему регистру."""
+    return re.sub(r"[^A-Za-z0-9]", "", s).upper()
 
 
 @app.post("/api/admin/machines", dependencies=[Depends(require_operator)])
