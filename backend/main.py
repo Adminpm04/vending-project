@@ -1084,6 +1084,22 @@ if os.path.isdir(frontend_dir):
             filename="vending-kiosk.apk",
         )
 
+    @app.get("/api/apk-version")
+    async def apk_version():
+        """Хэш текущего APK на сервере — приложение сверяет со своим на старте
+        и само предлагает обновиться, если файл сменился. Хэш вместо номера
+        версии — не нужно отдельно помнить бампнуть versionCode при каждой
+        заливке новой сборки, простая замена файла уже меняет ответ."""
+        path = os.path.join(frontend_dir, "vending-kiosk.apk")
+        if not os.path.exists(path):
+            raise HTTPException(404, "APK not uploaded yet")
+        import hashlib
+        h = hashlib.sha256()
+        with open(path, "rb") as f:
+            for chunk in iter(lambda: f.read(65536), b""):
+                h.update(chunk)
+        return {"sha256": h.hexdigest()}
+
     @app.get("/kiosk/{machine_id}", response_class=HTMLResponse)
     async def kiosk_page(machine_id: str):
         return FileResponse(os.path.join(frontend_dir, "kiosk.html"))

@@ -60,6 +60,10 @@ class MainActivity : AppCompatActivity() {
     private fun applyConfigurationState() {
         if (Prefs.isConfigured(this)) {
             startControllerService()
+            // Раз за запуск приложения: сверить свою версию с сервером и, если
+            // отличается, скачать новую и предложить установить — чтобы каждое
+            // обновление не требовало вручную качать APK из браузера на месте.
+            UpdateChecker.checkAndPromptOnce(this, Prefs.serverUrl(this))
             if (!webViewReady) {
                 setupWebView()
                 webViewReady = true
