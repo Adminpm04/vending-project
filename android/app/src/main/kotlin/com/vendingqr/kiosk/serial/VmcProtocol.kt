@@ -31,8 +31,10 @@ object VmcProtocol {
     val POLL_PACKET = byteArrayOf(0xFA.toByte(), 0xFB.toByte(), 0x41, 0x00, 0x40)
     val ACK_PACKET = byteArrayOf(0xFA.toByte(), 0xFB.toByte(), 0x42, 0x00, 0x43)
 
-    private val DISPENSE_IN_PROGRESS = setOf(0x01, 0x10, 0x11)
-    const val DISPENSE_SUCCESS = 0x02
+    // Полная таблица из VMC-Upper computer_V3.0.pdf, разд. 4.3.3 — см. пояснение
+    // в backend/vmc_protocol.py у тех же констант (1:1 порт).
+    private val DISPENSE_IN_PROGRESS = setOf(0x01, 0x10, 0x11, 0x14, 0x16, 0x18, 0x19, 0x21, 0x22, 0x23, 0x26)
+    private val DISPENSE_SUCCESS = setOf(0x02, 0x24)
 
     private val DISPENSE_ERRORS = mapOf(
         0x03 to "Selection jammed",
@@ -123,7 +125,7 @@ object VmcProtocol {
             ((text[1].toInt() and 0xFF) shl 8) or (text[2].toInt() and 0xFF)
         } else null
         val kind = when {
-            status == DISPENSE_SUCCESS -> DispenseStatus.Kind.SUCCESS
+            DISPENSE_SUCCESS.contains(status) -> DispenseStatus.Kind.SUCCESS
             DISPENSE_IN_PROGRESS.contains(status) -> DispenseStatus.Kind.IN_PROGRESS
             else -> DispenseStatus.Kind.ERROR
         }

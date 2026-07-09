@@ -30,9 +30,17 @@ CMD_MACHINE_STATUS = 0x52      # VMC → мы: статус машины
 POLL_PACKET = bytes([0xFA, 0xFB, 0x41, 0x00, 0x40])
 ACK_PACKET = bytes([0xFA, 0xFB, 0x42, 0x00, 0x43])
 
-# Статусы выдачи (Text[0] пакета 0x04)
-DISPENSE_IN_PROGRESS = {0x01, 0x10, 0x11}  # идёт выдача / лифт едет — ждём дальше
-DISPENSE_SUCCESS = 0x02
+# Статусы выдачи (Text[0] пакета 0x04) — полная таблица из VMC-Upper computer_V3.0.pdf,
+# раздел 4.3.3. У этой прошивки VMC два разных кода успеха: 0x02 (обычная выдача)
+# и 0x24 (после «положил в лоток микроволновки» — используется даже автоматами
+# без микроволновки/лотка, судя по живому тесту на реальном железе). Раньше 0x24
+# не был известен коду и ошибочно считался сбоем (найдено на живом тесте: слоты
+# реально выдали товар, а мы доложили «ошибка»). Заодно добавлены остальные
+# промежуточные статусы (двери/лоток микроволновки) как in_progress — по той же
+# причине: неизвестный код иначе трактуется как терминальная ошибка и обрывает
+# ожидание раньше времени, хотя выдача может ещё продолжаться.
+DISPENSE_IN_PROGRESS = {0x01, 0x10, 0x11, 0x14, 0x16, 0x18, 0x19, 0x21, 0x22, 0x23, 0x26}
+DISPENSE_SUCCESS = {0x02, 0x24}
 DISPENSE_TERMINATED = 0xFF
 
 DISPENSE_ERRORS = {
@@ -152,7 +160,7 @@ def parse_dispense_status(text: bytes) -> dict:
     """Разобрать Text пакета 0x04: Status(1) + selection(2) [+ microwave(1)]."""
     status = text[0]
     slot = int.from_bytes(text[1:3], "big") if len(text) >= 3 else None
-    if status == DISPENSE_SUCCESS:
+    if status in DISPENSE_SUCCESS:
         kind = "success"
     elif status in DISPENSE_IN_PROGRESS:
         kind = "in_progress"
