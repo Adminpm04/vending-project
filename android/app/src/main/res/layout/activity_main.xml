@@ -46,4 +46,21 @@
         android:layout_height="160dp"
         android:layout_gravity="top|start" />
 
+    <!-- Видимая подсказка поверх невидимой зоны — показывается, только пока
+         не настроено/нет связи (statusOverlay виден), чтобы техник видел,
+         куда именно жать. При обычной работе киоска (покупатель видит каталог)
+         остаётся скрытой — не мешает интерфейсу. -->
+    <TextView
+        android:id="@+id/settingsHint"
+        android:layout_width="56dp"
+        android:layout_height="56dp"
+        android:layout_gravity="top|start"
+        android:layout_margin="20dp"
+        android:background="@drawable/settings_hint_bg"
+        android:gravity="center"
+        android:text="⚙"
+        android:textColor="#F5F5F5"
+        android:textSize="24sp"
+        android:visibility="gone" />
+
 </FrameLayout>

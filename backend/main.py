@@ -604,6 +604,17 @@ async def delete_user(user_id: int, me: AdminUser = Depends(require_admin), db: 
 
 # ─── ADMIN API ───────────────────────────────────────────────────────────────
 
+# Без 0/O/1/I/L (визуально путаются) и без гласных (случайно не складывается в
+# слово) — код набирается руками на экранной клавиатуре планшета на точке.
+_TOKEN_ALPHABET = "23456789BCDFGHJKMNPQRSTVWXYZ"
+_TOKEN_LEN = 10  # ~48 бит энтропии — с запасом для одного WS-логина за попытку
+
+
+def _generate_machine_token() -> str:
+    code = "".join(secrets.choice(_TOKEN_ALPHABET) for _ in range(_TOKEN_LEN))
+    return code[:5] + "-" + code[5:]  # XXXXX-XXXXX — легче читать и набирать
+
+
 @app.post("/api/admin/machines", dependencies=[Depends(require_operator)])
 async def add_machine(data: dict, db: Session = Depends(get_db)):
     machine_id = (data.get("machine_id") or "").strip()
@@ -612,7 +623,7 @@ async def add_machine(data: dict, db: Session = Depends(get_db)):
         raise HTTPException(400, "machine_id: 1-50 chars, only letters, digits, '-' and '_'")
     if db.query(VendingMachine).filter(VendingMachine.machine_id == machine_id).first():
         raise HTTPException(409, "machine_id already exists")
-    token = secrets.token_urlsafe(32)
+    token = _generate_machine_token()
     m = VendingMachine(
         machine_id=machine_id,
         name=data.get("name"),
@@ -625,6 +636,21 @@ async def add_machine(data: dict, db: Session = Depends(get_db)):
     db.commit()
     # Токен показывается один раз — прошивается в контроллер точки
     return {"machine_id": m.machine_id, "secret_token": token}
+
+
+@app.post("/api/admin/machines/{machine_id}/regenerate-token", dependencies=[Depends(require_operator)])
+async def regenerate_machine_token(machine_id: str, db: Session = Depends(get_db)):
+    """Перевыпуск токена — например, чтобы заменить старый длинный токен точки
+    на новый короткий формат, или если токен мог утечь. Старое соединение
+    контроллера (если было установлено) не разрывается немедленно, но при
+    следующем переподключении по старому токену получит 401 — на планшете
+    нужно сразу вписать новый через Настройки."""
+    m = db.query(VendingMachine).filter(VendingMachine.machine_id == machine_id).first()
+    if not m:
+        raise HTTPException(404, "machine not found")
+    m.secret_token = _generate_machine_token()
+    db.commit()
+    return {"machine_id": m.machine_id, "secret_token": m.secret_token}
 
 
 @app.get("/api/admin/machines", dependencies=[Depends(require_viewer)])

@@ -154,10 +154,14 @@ class MainActivity : AppCompatActivity() {
         binding.statusText.text = text
         binding.statusSpinner.visibility = if (showSpinner) View.VISIBLE else View.GONE
         binding.statusOverlay.visibility = View.VISIBLE
+        // Показываем видимую метку поверх зоны долгого нажатия только пока нет
+        // каталога товаров на экране (иначе значок мешал бы покупателю).
+        binding.settingsHint.visibility = View.VISIBLE
     }
 
     private fun hideOverlay() {
         binding.statusOverlay.visibility = View.GONE
+        binding.settingsHint.visibility = View.GONE
     }
 
     private fun startControllerService() {
