@@ -90,6 +90,63 @@
   .badge-err{width:calc(var(--vscale)*140px);height:calc(var(--vscale)*140px);border-radius:50%;background:radial-gradient(circle at 32% 28%,#E05B5B,#D14343);box-shadow:0 24px 60px rgba(209,67,67,.38),inset 0 2px 0 rgba(255,255,255,.3);display:flex;align-items:center;justify-content:center;animation:pop .5s cubic-bezier(.2,1.4,.4,1)}
   .badge-err span{font-size:calc(var(--vscale)*76px);font-weight:800;color:#fff;line-height:1;margin-top:-8px}
   .hidden{display:none!important}
+
+  /* Улучшение поверх резервных правил выше: на любом браузере, который
+     ПОНИМАЕТ clamp() — а старый WebView на киоск-планшетах не понимает,
+     для того и нужны были все правила выше — включается оригинальный
+     плавный дизайн (то же самое, что было до фикса совместимости).
+     @supports — тоже старая, безопасная штука (с 2013 года): если браузер
+     не знает даже её, он молча пропускает весь блок целиком и остаётся на
+     резервных calc()-правилах, ничего не ломая. Если знает, но конкретно
+     clamp() как значение не умеет — сам @supports() корректно вернёт
+     "нет", блок так же пропустится. Совместимо и с эффектным дизайном
+     разом — каждый браузер получает лучшее, что понимает. */
+  @supports (width:clamp(1px,1vw,2px)){
+    .hdr{gap:clamp(8px,1.5vw,16px);padding:clamp(12px,2.5vw,24px) clamp(14px,3vw,30px) clamp(8px,1.8vw,18px)}
+    .hdr>*:not(:first-child){margin-left:0}
+    .hdr h1{font-size:clamp(17px,3vw,26px)}
+    .hdr .sub{font-size:clamp(11px,1.7vw,15px)}
+    .pill{gap:clamp(6px,1vw,9px);padding:clamp(6px,1.1vw,9px) clamp(11px,1.8vw,16px)}
+    .pill>*:not(:first-child){margin-left:0}
+    .pill span:last-child{font-size:clamp(12px,1.8vw,15px)}
+    .pill .dot{width:clamp(9px,1.3vw,11px);height:clamp(9px,1.3vw,11px)}
+    .clock{font-size:clamp(15px,2.4vw,22px)}
+    .grid-wrap{padding:clamp(8px,1.5vw,10px) clamp(14px,3vw,30px) clamp(14px,2.5vw,20px)}
+    .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(clamp(128px,20vw,220px),1fr));gap:clamp(10px,2vw,20px)}
+    @media(orientation:portrait){.grid{grid-template-columns:repeat(auto-fill,minmax(clamp(120px,28vw,180px),1fr))}}
+    .card{border-radius:clamp(14px,1.8vw,22px);padding:clamp(10px,1.4vw,16px);flex:none;max-width:none;margin:0}
+    .card .ped{height:auto;aspect-ratio:1.12/1;border-radius:clamp(11px,1.4vw,16px);display:grid;place-items:center}
+    .card .ph{display:grid;place-items:center}
+    .card .ph span{font-size:clamp(9px,1.2vw,11px)}
+    .card .oosbadge{inset:0;display:grid;place-items:center;backdrop-filter:blur(3px)}
+    .card .oosbadge span{font-size:clamp(12px,1.7vw,15px);padding:clamp(6px,1vw,8px) clamp(11px,1.6vw,16px)}
+    .card .name{margin-top:clamp(10px,1.3vw,14px);font-size:clamp(14px,2vw,20px)}
+    .card .row{gap:6px}
+    .card .price{font-size:clamp(20px,3.1vw,30px)}
+    .card .slot{font-size:clamp(11px,1.5vw,13px);padding:clamp(4px,.7vw,5px) clamp(8px,1.3vw,11px);margin-left:0}
+    .foot{padding:clamp(10px,1.5vw,14px);font-size:clamp(13px,2vw,17px)}
+    .overlay{inset:0;padding:clamp(18px,3vw,30px)}
+    .ov-full{gap:clamp(16px,3vw,26px)}
+    .ov-full>*:not(:first-child){margin-top:0}
+    .pay-box{gap:clamp(10px,1.8vw,14px)}
+    .pay-box>*:not(:first-child){margin-top:0}
+    .pay-name{font-size:clamp(17px,3vw,24px)}
+    .pay-price{font-size:clamp(38px,8vw,64px)}
+    .qr{border-radius:clamp(16px,2.5vw,24px);padding:clamp(14px,2.2vw,22px)}
+    .qr img{width:clamp(180px,34vmin,256px);height:clamp(180px,34vmin,256px)}
+    .pay-hint{font-size:clamp(15px,2.4vw,20px)}
+    .timer{gap:10px;padding:clamp(8px,1.3vw,10px) clamp(14px,2.4vw,20px)}
+    .timer>*:not(:first-child){margin-left:0}
+    .timer .t{font-size:clamp(15px,2.3vw,19px)}
+    .btn-ghost{font-size:clamp(16px,2.6vw,21px);border-radius:clamp(14px,2vw,18px);padding:clamp(13px,2.2vw,18px) clamp(36px,7vw,60px)}
+    .btn-accent{font-size:clamp(16px,2.5vw,20px);border-radius:clamp(14px,2vw,18px);padding:clamp(13px,2.2vw,18px) clamp(32px,6vw,54px)}
+    .spinner{width:clamp(72px,12vw,104px);height:clamp(72px,12vw,104px);border-width:clamp(6px,1vw,8px)}
+    .big-title{font-size:clamp(26px,5.5vw,42px)}
+    .big-sub{font-size:clamp(16px,3.3vw,25px)}
+    .badge-ok{width:clamp(120px,22vw,170px);height:clamp(120px,22vw,170px)}
+    .badge-err{width:clamp(120px,22vw,170px);height:clamp(120px,22vw,170px)}
+    .badge-err span{font-size:clamp(60px,11vw,92px)}
+  }
 </style>
 </head>
 <body>
