@@ -40,11 +40,11 @@
   .grid-wrap{flex:1;overflow:auto;padding:8px 22px 16px}
   .grid{display:flex;flex-wrap:wrap}
   .card{background:var(--surf);border:1px solid var(--line);border-radius:18px;padding:12px;box-shadow:var(--card-sh);
-        cursor:pointer;transition:transform .18s,box-shadow .25s;position:relative;flex:0 1 190px;margin:8px}
-  @media(orientation:portrait){.card{flex-basis:140px}}
+        cursor:pointer;transition:transform .18s,box-shadow .25s;position:relative;flex:1 1 190px;max-width:260px;margin:8px}
+  @media(orientation:portrait){.card{flex-basis:140px;max-width:200px}}
   .card:active{transform:scale(.955)}
   .card.oos{opacity:.62;cursor:not-allowed}
-  .card .ped{position:relative;height:150px;border-radius:14px;background:var(--ped);box-shadow:var(--ped-inner);display:flex;align-items:center;justify-content:center;overflow:hidden}
+  .card .ped{position:relative;height:170px;border-radius:14px;background:var(--ped);box-shadow:var(--ped-inner);display:flex;align-items:center;justify-content:center;overflow:hidden}
   .card .ped img{width:100%;height:100%;object-fit:contain}
   .card .ph{width:58%;height:76%;border-radius:12px;border:1.5px dashed var(--line);background:repeating-linear-gradient(45deg,transparent 0 9px,rgba(128,128,128,.09) 9px 18px);display:flex;align-items:center;justify-content:center}
   .card .ph span{font-family:ui-monospace,Menlo,monospace;font-size:10px;color:var(--text2)}
