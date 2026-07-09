@@ -21,67 +21,74 @@
   @keyframes pop{0%{transform:scale(.4);opacity:0}60%{transform:scale(1.08)}100%{transform:scale(1);opacity:1}}
   @keyframes checkdraw{to{stroke-dashoffset:0}}
   @keyframes softpulse{0%,100%{opacity:1}50%{opacity:.55}}
-  /* Фиксированные размеры + медиа-запрос на portrait вместо clamp()/aspect-ratio/
-     flex-gap/inset: заводской WebView на киоск-планшетах бывает очень старым
+  /* Автомасштабирование под разные экраны БЕЗ clamp()/aspect-ratio/flex-gap/
+     inset: заводской WebView на киоск-планшетах бывает очень старым
      (замороженная прошивка без автообновлений) и молча игнорирует современный
      CSS — тогда падает вся раскладка (clamp = invalid value = свойство не
-     применяется вовсе), а не только не масштабируется. Отступы — через margin
-     на потомках (:not(:first-child)), не через gap (тоже не всегда есть). */
+     применяется вовсе), а не только не масштабируется.
+     Вместо clamp(min, vw, max) — своя переменная-масштаб --vscale, которая
+     переключается по обычным @media(max/min-width) (это старьё, работает
+     везде), а каждый размер = calc(var(--vscale) * базовое_значение).
+     Ровно то же поведение (мельче на компактном экране, крупнее на большом),
+     но собранное из CSS-фич 2013-2016 года, а не 2019-2021. */
+  :root{--vscale:1}
+  @media(max-width:700px){:root{--vscale:.8}}
+  @media(min-width:1500px){:root{--vscale:1.25}}
   #app{position:fixed;top:0;right:0;bottom:0;left:0;display:flex;flex-direction:column}
-  .hdr{display:flex;align-items:center;padding:16px 20px 12px;flex:none}
-  .hdr>*:not(:first-child){margin-left:12px}
-  .hdr h1{font-size:22px;font-weight:800;line-height:1.15;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin:0}
-  .hdr .sub{font-size:13px;font-weight:500;color:var(--text2);margin-top:2px}
-  .pill{display:flex;align-items:center;background:var(--surf);border:1px solid var(--line);border-radius:999px;padding:8px 14px;box-shadow:var(--card-sh)}
-  .pill>*:not(:first-child){margin-left:8px}
-  .pill span:last-child{font-size:14px}
-  .pill .dot{width:10px;height:10px;border-radius:50%}
-  .clock{font-size:19px;font-weight:700;color:var(--text2);font-variant-numeric:tabular-nums}
-  .grid-wrap{flex:1;overflow:auto;padding:8px 22px 16px}
+  .hdr{display:flex;align-items:center;padding:calc(var(--vscale)*16px) calc(var(--vscale)*20px) calc(var(--vscale)*12px);flex:none}
+  .hdr>*:not(:first-child){margin-left:calc(var(--vscale)*12px)}
+  .hdr h1{font-size:calc(var(--vscale)*22px);font-weight:800;line-height:1.15;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin:0}
+  .hdr .sub{font-size:calc(var(--vscale)*13px);font-weight:500;color:var(--text2);margin-top:2px}
+  .pill{display:flex;align-items:center;background:var(--surf);border:1px solid var(--line);border-radius:999px;padding:calc(var(--vscale)*8px) calc(var(--vscale)*14px);box-shadow:var(--card-sh)}
+  .pill>*:not(:first-child){margin-left:calc(var(--vscale)*8px)}
+  .pill span:last-child{font-size:calc(var(--vscale)*14px)}
+  .pill .dot{width:calc(var(--vscale)*10px);height:calc(var(--vscale)*10px);border-radius:50%}
+  .clock{font-size:calc(var(--vscale)*19px);font-weight:700;color:var(--text2);font-variant-numeric:tabular-nums}
+  .grid-wrap{flex:1;overflow:auto;padding:calc(var(--vscale)*8px) calc(var(--vscale)*22px) calc(var(--vscale)*16px)}
   .grid{display:flex;flex-wrap:wrap}
-  .card{background:var(--surf);border:1px solid var(--line);border-radius:18px;padding:12px;box-shadow:var(--card-sh);
-        cursor:pointer;transition:transform .18s,box-shadow .25s;position:relative;flex:1 1 190px;max-width:260px;margin:8px}
-  @media(orientation:portrait){.card{flex-basis:140px;max-width:200px}}
+  .card{background:var(--surf);border:1px solid var(--line);border-radius:calc(var(--vscale)*18px);padding:calc(var(--vscale)*12px);box-shadow:var(--card-sh);
+        cursor:pointer;transition:transform .18s,box-shadow .25s;position:relative;flex:1 1 calc(var(--vscale)*190px);max-width:calc(var(--vscale)*260px);margin:calc(var(--vscale)*8px)}
+  @media(orientation:portrait){.card{flex-basis:calc(var(--vscale)*140px);max-width:calc(var(--vscale)*200px)}}
   .card:active{transform:scale(.955)}
   .card.oos{opacity:.62;cursor:not-allowed}
-  .card .ped{position:relative;height:170px;border-radius:14px;background:var(--ped);box-shadow:var(--ped-inner);display:flex;align-items:center;justify-content:center;overflow:hidden}
+  .card .ped{position:relative;height:calc(var(--vscale)*170px);border-radius:calc(var(--vscale)*14px);background:var(--ped);box-shadow:var(--ped-inner);display:flex;align-items:center;justify-content:center;overflow:hidden}
   .card .ped img{width:100%;height:100%;object-fit:contain}
   .card .ph{width:58%;height:76%;border-radius:12px;border:1.5px dashed var(--line);background:repeating-linear-gradient(45deg,transparent 0 9px,rgba(128,128,128,.09) 9px 18px);display:flex;align-items:center;justify-content:center}
-  .card .ph span{font-family:ui-monospace,Menlo,monospace;font-size:10px;color:var(--text2)}
+  .card .ph span{font-family:ui-monospace,Menlo,monospace;font-size:calc(var(--vscale)*10px);color:var(--text2)}
   .card .shadow{position:absolute;left:12%;right:12%;bottom:7px;height:10px;border-radius:50%;background:radial-gradient(ellipse,rgba(0,0,0,.22),transparent 70%)}
   .card .oosbadge{position:absolute;top:0;right:0;bottom:0;left:0;display:flex;align-items:center;justify-content:center;background:var(--glass)}
-  .card .oosbadge span{font-size:13px;font-weight:800;color:#D14343;background:var(--surf);border:1px solid var(--line);border-radius:999px;padding:7px 13px}
-  .card .name{margin-top:12px;font-size:16px;font-weight:700;line-height:1.25;min-height:2.5em}
+  .card .oosbadge span{font-size:calc(var(--vscale)*13px);font-weight:800;color:#D14343;background:var(--surf);border:1px solid var(--line);border-radius:999px;padding:calc(var(--vscale)*7px) calc(var(--vscale)*13px)}
+  .card .name{margin-top:calc(var(--vscale)*12px);font-size:calc(var(--vscale)*16px);font-weight:700;line-height:1.25;min-height:2.5em}
   .card .row{display:flex;align-items:center;justify-content:space-between;margin-top:8px}
-  .card .price{font-size:24px;font-weight:800;color:var(--accent2);letter-spacing:-.5px}
-  .card .slot{font-size:12px;font-weight:700;color:var(--text2);background:var(--bg);border:1px solid var(--line);border-radius:999px;padding:4px 9px;white-space:nowrap;margin-left:6px}
-  .foot{flex:none;text-align:center;padding:12px;font-size:14px;font-weight:600;color:var(--text2);border-top:1px solid var(--line)}
-  .overlay{position:fixed;top:0;right:0;bottom:0;left:0;z-index:10;display:flex;align-items:center;justify-content:center;padding:22px}
+  .card .price{font-size:calc(var(--vscale)*24px);font-weight:800;color:var(--accent2);letter-spacing:-.5px}
+  .card .slot{font-size:calc(var(--vscale)*12px);font-weight:700;color:var(--text2);background:var(--bg);border:1px solid var(--line);border-radius:999px;padding:calc(var(--vscale)*4px) calc(var(--vscale)*9px);white-space:nowrap;margin-left:6px}
+  .foot{flex:none;text-align:center;padding:calc(var(--vscale)*12px);font-size:calc(var(--vscale)*14px);font-weight:600;color:var(--text2);border-top:1px solid var(--line)}
+  .overlay{position:fixed;top:0;right:0;bottom:0;left:0;z-index:10;display:flex;align-items:center;justify-content:center;padding:calc(var(--vscale)*22px)}
   .ov-pay{background:var(--glass);-webkit-backdrop-filter:blur(22px);backdrop-filter:blur(22px);animation:fadeup .35s ease}
   .ov-full{background:var(--bg);flex-direction:column;text-align:center;animation:fadeup .3s ease}
-  .ov-full>*:not(:first-child){margin-top:18px}
+  .ov-full>*:not(:first-child){margin-top:calc(var(--vscale)*18px)}
   .pay-box{display:flex;flex-direction:column;align-items:center;max-width:560px;width:100%}
-  .pay-box>*:not(:first-child){margin-top:12px}
-  .pay-name{font-size:19px;font-weight:700;color:var(--text2)}
-  .pay-price{font-size:46px;font-weight:800;color:var(--accent2);letter-spacing:-2px;line-height:1}
-  .qr{background:#FFFFFF;border-radius:18px;padding:16px;box-shadow:0 6px 16px rgba(17,17,17,.10),0 30px 60px rgba(17,17,17,.22);margin-top:6px}
-  .qr img{display:block;width:220px;height:220px;border-radius:6px;image-rendering:pixelated}
-  .pay-hint{font-size:16px;font-weight:600;text-align:center;max-width:420px;line-height:1.45}
-  .timer{display:flex;align-items:center;background:rgba(224,164,0,.14);border:1px solid rgba(224,164,0,.35);border-radius:999px;padding:9px 16px}
-  .timer>*:not(:first-child){margin-left:10px}
+  .pay-box>*:not(:first-child){margin-top:calc(var(--vscale)*12px)}
+  .pay-name{font-size:calc(var(--vscale)*19px);font-weight:700;color:var(--text2)}
+  .pay-price{font-size:calc(var(--vscale)*46px);font-weight:800;color:var(--accent2);letter-spacing:-2px;line-height:1}
+  .qr{background:#FFFFFF;border-radius:calc(var(--vscale)*18px);padding:calc(var(--vscale)*16px);box-shadow:0 6px 16px rgba(17,17,17,.10),0 30px 60px rgba(17,17,17,.22);margin-top:6px}
+  .qr img{display:block;width:calc(var(--vscale)*220px);height:calc(var(--vscale)*220px);border-radius:6px;image-rendering:pixelated}
+  .pay-hint{font-size:calc(var(--vscale)*16px);font-weight:600;text-align:center;max-width:420px;line-height:1.45}
+  .timer{display:flex;align-items:center;background:rgba(224,164,0,.14);border:1px solid rgba(224,164,0,.35);border-radius:999px;padding:calc(var(--vscale)*9px) calc(var(--vscale)*16px)}
+  .timer>*:not(:first-child){margin-left:calc(var(--vscale)*10px)}
   .timer .d{width:10px;height:10px;border-radius:50%;background:#E0A400;animation:softpulse 1.6s infinite}
-  .timer .t{font-size:17px;font-weight:800;color:#E0A400;font-variant-numeric:tabular-nums}
-  .btn-ghost{font-family:inherit;font-size:18px;font-weight:700;color:var(--text);background:var(--surf);border:1.5px solid var(--line);border-radius:16px;padding:15px 44px;cursor:pointer;box-shadow:var(--card-sh);transition:transform .15s}
+  .timer .t{font-size:calc(var(--vscale)*17px);font-weight:800;color:#E0A400;font-variant-numeric:tabular-nums}
+  .btn-ghost{font-family:inherit;font-size:calc(var(--vscale)*18px);font-weight:700;color:var(--text);background:var(--surf);border:1.5px solid var(--line);border-radius:calc(var(--vscale)*16px);padding:calc(var(--vscale)*15px) calc(var(--vscale)*44px);cursor:pointer;box-shadow:var(--card-sh);transition:transform .15s}
   .btn-ghost:active{transform:scale(.96)}
-  .btn-accent{font-family:inherit;font-size:18px;font-weight:700;color:#fff;background:linear-gradient(160deg,#A03050,#8B253B);border:none;border-radius:16px;padding:15px 40px;cursor:pointer;box-shadow:var(--btn-sh)}
+  .btn-accent{font-family:inherit;font-size:calc(var(--vscale)*18px);font-weight:700;color:#fff;background:linear-gradient(160deg,#A03050,#8B253B);border:none;border-radius:calc(var(--vscale)*16px);padding:calc(var(--vscale)*15px) calc(var(--vscale)*40px);cursor:pointer;box-shadow:var(--btn-sh)}
   .btn-accent:active{transform:scale(.96)}
-  .spinner{width:88px;height:88px;border-radius:50%;border:7px solid var(--line);border-top-color:var(--accent2);animation:spin 1s linear infinite}
-  .big-title{font-size:32px;font-weight:800;text-align:center;line-height:1.2}
-  .big-sub{font-size:19px;font-weight:600;color:var(--text2)}
-  .badge-ok{width:140px;height:140px;border-radius:50%;background:radial-gradient(circle at 32% 28%,#3CBF72,#2E9E5B);box-shadow:0 24px 60px rgba(46,158,91,.4),inset 0 2px 0 rgba(255,255,255,.35);display:flex;align-items:center;justify-content:center;animation:pop .5s cubic-bezier(.2,1.4,.4,1)}
+  .spinner{width:calc(var(--vscale)*88px);height:calc(var(--vscale)*88px);border-radius:50%;border-style:solid;border-width:calc(var(--vscale)*7px);border-color:var(--line);border-top-color:var(--accent2);animation:spin 1s linear infinite}
+  .big-title{font-size:calc(var(--vscale)*32px);font-weight:800;text-align:center;line-height:1.2}
+  .big-sub{font-size:calc(var(--vscale)*19px);font-weight:600;color:var(--text2)}
+  .badge-ok{width:calc(var(--vscale)*140px);height:calc(var(--vscale)*140px);border-radius:50%;background:radial-gradient(circle at 32% 28%,#3CBF72,#2E9E5B);box-shadow:0 24px 60px rgba(46,158,91,.4),inset 0 2px 0 rgba(255,255,255,.35);display:flex;align-items:center;justify-content:center;animation:pop .5s cubic-bezier(.2,1.4,.4,1)}
   .badge-ok svg{width:54%;height:54%}
-  .badge-err{width:140px;height:140px;border-radius:50%;background:radial-gradient(circle at 32% 28%,#E05B5B,#D14343);box-shadow:0 24px 60px rgba(209,67,67,.38),inset 0 2px 0 rgba(255,255,255,.3);display:flex;align-items:center;justify-content:center;animation:pop .5s cubic-bezier(.2,1.4,.4,1)}
-  .badge-err span{font-size:76px;font-weight:800;color:#fff;line-height:1;margin-top:-8px}
+  .badge-err{width:calc(var(--vscale)*140px);height:calc(var(--vscale)*140px);border-radius:50%;background:radial-gradient(circle at 32% 28%,#E05B5B,#D14343);box-shadow:0 24px 60px rgba(209,67,67,.38),inset 0 2px 0 rgba(255,255,255,.3);display:flex;align-items:center;justify-content:center;animation:pop .5s cubic-bezier(.2,1.4,.4,1)}
+  .badge-err span{font-size:calc(var(--vscale)*76px);font-weight:800;color:#fff;line-height:1;margin-top:-8px}
   .hidden{display:none!important}
 </style>
 </head>
@@ -137,10 +144,10 @@
 </div>
 
 <!-- K6 Недоступен -->
-<div id="ov-off" class="overlay ov-full hidden" style="padding:30px">
-  <div style="width:130px;height:130px;border-radius:34px;background:var(--ped);box-shadow:var(--card-sh),var(--ped-inner);display:flex;align-items:center;justify-content:center">
-    <span style="width:14px;height:48px;border-radius:8px;background:var(--text2);margin-right:14px"></span>
-    <span style="width:14px;height:48px;border-radius:8px;background:var(--text2)"></span>
+<div id="ov-off" class="overlay ov-full hidden" style="padding:calc(var(--vscale)*30px)">
+  <div style="width:calc(var(--vscale)*130px);height:calc(var(--vscale)*130px);border-radius:calc(var(--vscale)*34px);background:var(--ped);box-shadow:var(--card-sh),var(--ped-inner);display:flex;align-items:center;justify-content:center">
+    <span style="width:calc(var(--vscale)*14px);height:calc(var(--vscale)*48px);border-radius:8px;background:var(--text2);margin-right:calc(var(--vscale)*14px)"></span>
+    <span style="width:calc(var(--vscale)*14px);height:calc(var(--vscale)*48px);border-radius:8px;background:var(--text2)"></span>
   </div>
   <div class="big-title">Автомат временно не&nbsp;работает</div>
   <div class="big-sub" style="max-width:540px;line-height:1.5">Приносим извинения. Мы уже знаем о проблеме и скоро всё починим</div>
