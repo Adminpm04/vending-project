@@ -31,6 +31,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var binding: ActivityMainBinding
     private val retryHandler = Handler(Looper.getMainLooper())
     private var retryDelayMs = 2000L
+    private var webViewReady = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -41,10 +42,31 @@ class MainActivity : AppCompatActivity() {
         applyImmersiveMode()
 
         setupSettingsHotspot()
+        applyConfigurationState()
+    }
 
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        // MainActivity объявлена launchMode="singleTask": когда из SettingsActivity
+        // возвращаются сюда после сохранения (CLEAR_TOP|SINGLE_TOP), система не
+        // создаёт новый экземпляр и не вызывает onCreate() — переиспользует этот
+        // же, вызывая только onNewIntent(). Без этого переопределения экран так и
+        // оставался бы в состоянии «не настроено», в котором был при первом запуске,
+        // даже если токен только что успешно сохранили.
+        applyConfigurationState()
+    }
+
+    private fun applyConfigurationState() {
         if (Prefs.isConfigured(this)) {
             startControllerService()
-            setupWebView()
+            if (!webViewReady) {
+                setupWebView()
+                webViewReady = true
+                // Сразу сменить текст с «не настроено» на «загрузка», пока WebView
+                // тянет kiosk.html — иначе повисит устаревшая надпись до onPageFinished.
+                showOverlay("Загрузка…", showSpinner = true)
+            }
             loadKiosk()
         } else {
             // Статичное состояние ожидания настройки — без спиннера, иначе
