@@ -5,6 +5,7 @@ import android.content.Intent
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
+import android.widget.Toast
 import androidx.core.content.FileProvider
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -37,22 +38,44 @@ object UpdateChecker {
                 runCheck(appContext, serverUrl)
             } catch (e: Exception) {
                 Log.w(TAG, "update check failed: ${e.message}")
+                toast(appContext, "Проверка обновлений: ${e.message}")
             } finally {
                 checking.set(false)
             }
         }
     }
 
+    // На кассовом планшете нет доступа к логам (adb) — без тоста любой сбой
+    // (сеть недоступна, sourceDir не читается, установщик не открылся) был бы
+    // полностью незаметен и выглядел бы как «автообновление не работает»,
+    // хотя на самом деле просто молча падало на каком-то шаге.
+    private fun toast(context: Context, text: String) {
+        mainHandler.post { Toast.makeText(context, text, Toast.LENGTH_LONG).show() }
+    }
+
     private fun runCheck(context: Context, serverUrl: String) {
         val base = serverUrl.trimEnd('/')
-        val remoteHash = fetchRemoteHash(base) ?: return
-        val localHash = ownApkHash(context) ?: return
+        val remoteHash = fetchRemoteHash(base)
+        if (remoteHash == null) {
+            toast(context, "Проверка обновлений: сервер недоступен")
+            return
+        }
+        val localHash = ownApkHash(context)
+        if (localHash == null) {
+            toast(context, "Проверка обновлений: не удалось прочитать свою версию")
+            return
+        }
         if (remoteHash.equals(localHash, ignoreCase = true)) {
             Log.i(TAG, "kiosk app is up to date")
             return
         }
         Log.i(TAG, "new version on server ($remoteHash != $localHash) — downloading")
-        val file = downloadApk(context, base) ?: return
+        toast(context, "Найдено обновление, скачиваю…")
+        val file = downloadApk(context, base)
+        if (file == null) {
+            toast(context, "Не удалось скачать обновление")
+            return
+        }
         mainHandler.post { promptInstall(context, file) }
     }
 
@@ -112,6 +135,7 @@ object UpdateChecker {
             context.startActivity(intent)
         } catch (e: Exception) {
             Log.w(TAG, "failed to launch installer: ${e.message}")
+            Toast.makeText(context, "Не удалось открыть установщик: ${e.message}", Toast.LENGTH_LONG).show()
         }
     }
 }
