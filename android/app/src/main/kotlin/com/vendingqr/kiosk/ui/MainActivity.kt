@@ -3,6 +3,7 @@ package com.vendingqr.kiosk.ui
 import android.app.ActivityManager
 import android.content.Context
 import android.content.Intent
+import android.content.pm.ActivityInfo
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
@@ -36,6 +37,8 @@ class MainActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // До setContentView(), чтобы не мелькнуть неверной ориентацией на старте.
+        applyOrientation()
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
@@ -54,8 +57,24 @@ class MainActivity : AppCompatActivity() {
         // создаёт новый экземпляр и не вызывает onCreate() — переиспользует этот
         // же, вызывая только onNewIntent(). Без этого переопределения экран так и
         // оставался бы в состоянии «не настроено», в котором был при первом запуске,
-        // даже если токен только что успешно сохранили.
+        // даже если токен только что успешно сохранили. Заодно переприменяем
+        // ориентацию — если её только что переключили в настройках, должно
+        // сработать сразу, без перезапуска приложения.
+        applyOrientation()
         applyConfigurationState()
+    }
+
+    /**
+     * Планшет физически монтируется в автомат по-разному в зависимости от
+     * корпуса — горизонтально или вертикально. Ориентация настраивается один
+     * раз в SettingsActivity под конкретную точку (Prefs.isPortrait), а не
+     * зашита статически в манифесте.
+     */
+    private fun applyOrientation() {
+        requestedOrientation = if (Prefs.isPortrait(this))
+            ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+        else
+            ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
     }
 
     private fun applyConfigurationState() {

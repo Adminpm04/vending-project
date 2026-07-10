@@ -62,6 +62,14 @@
             android:inputType="text"
             android:autofillHints="" />
 
+        <CheckBox
+            android:id="@+id/inputPortrait"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:text="@string/settings_portrait"
+            android:textColor="@color/brand_dark" />
+
         <Button
             android:id="@+id/btnSave"
             android:layout_width="match_parent"

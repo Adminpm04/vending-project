@@ -27,6 +27,7 @@ class SettingsActivity : AppCompatActivity() {
         binding.inputServerUrl.setText(Prefs.serverUrl(this))
         binding.inputToken.setText(Prefs.token(this))
         binding.inputSerialPort.setText(Prefs.serialPort(this))
+        binding.inputPortrait.isChecked = Prefs.isPortrait(this)
 
         binding.btnSave.setOnClickListener { save() }
     }
@@ -36,13 +37,14 @@ class SettingsActivity : AppCompatActivity() {
         val serverUrl = binding.inputServerUrl.text.toString().trim()
         val token = binding.inputToken.text.toString().trim()
         val serialPort = binding.inputSerialPort.text.toString().trim()
+        val portrait = binding.inputPortrait.isChecked
 
         if (machineId.isEmpty() || token.isEmpty()) {
             Toast.makeText(this, "Заполните ID автомата и токен", Toast.LENGTH_SHORT).show()
             return
         }
 
-        Prefs.save(this, machineId, serverUrl, token, serialPort)
+        Prefs.save(this, machineId, serverUrl, token, serialPort, portrait)
 
         // Перезапускаем сервис контроллера с новыми настройками.
         stopService(Intent(this, VmcControllerService::class.java))

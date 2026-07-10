@@ -10,6 +10,7 @@ object Prefs {
     private const val KEY_SERVER_URL = "server_url"
     private const val KEY_TOKEN = "machine_token"
     private const val KEY_SERIAL_PORT = "serial_port"
+    private const val KEY_PORTRAIT = "portrait"
 
     private const val DEFAULT_SERVER_URL = "http://10.251.4.253:8000"
     private const val DEFAULT_SERIAL_PORT = "/dev/ttyS1"
@@ -26,13 +27,18 @@ object Prefs {
     fun token(ctx: Context): String = prefs(ctx).getString(KEY_TOKEN, "") ?: ""
     fun serialPort(ctx: Context): String = prefs(ctx).getString(KEY_SERIAL_PORT, DEFAULT_SERIAL_PORT) ?: DEFAULT_SERIAL_PORT
     fun serialBaud(ctx: Context): Int = DEFAULT_BAUD
+    // Планшет физически монтируется в автомат по-разному в зависимости от
+    // модели корпуса — на одних точках горизонтально, на других вертикально.
+    // По умолчанию false (альбомная) — сохраняет поведение уже настроенных точек.
+    fun isPortrait(ctx: Context): Boolean = prefs(ctx).getBoolean(KEY_PORTRAIT, false)
 
-    fun save(ctx: Context, machineId: String, serverUrl: String, token: String, serialPort: String) {
+    fun save(ctx: Context, machineId: String, serverUrl: String, token: String, serialPort: String, portrait: Boolean) {
         prefs(ctx).edit()
             .putString(KEY_MACHINE_ID, machineId.trim())
             .putString(KEY_SERVER_URL, serverUrl.trim().ifBlank { DEFAULT_SERVER_URL })
             .putString(KEY_TOKEN, token.trim())
             .putString(KEY_SERIAL_PORT, serialPort.trim().ifBlank { DEFAULT_SERIAL_PORT })
+            .putBoolean(KEY_PORTRAIT, portrait)
             .apply()
     }
 
