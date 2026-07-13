@@ -195,6 +195,15 @@ function isAdmin(){ return ME && ME.role==='admin'; }
 // ── Утилиты ──
 function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 function fmt(v){ return String(Math.round(v||0)).replace(/\B(?=(\d{3})+(?!\d))/g,' ') + ' сомони'; }
+// Тонкие line-иконки вместо эмодзи (эмодзи рисуется по-разному на разных
+// устройствах/шрифтах и выбивается из общего минималистичного стиля).
+// stroke="currentColor" — цвет наследуется от text/color кнопки-обёртки.
+function iconSvg(path, size){
+  return `<svg width="${size||16}" height="${size||16}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:block">${path}</svg>`;
+}
+const ICON_EDIT = (size)=>iconSvg('<path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5Z"/>', size);
+const ICON_TRASH = (size)=>iconSvg('<polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>', size);
+const ICON_KEY = (size)=>iconSvg('<circle cx="7.5" cy="15.5" r="5.5"/><path d="M21 2l-9.6 9.6"/><path d="M15.5 7.5l3 3L22 7l-3-3"/>', size);
 function chip(status){
   const [t,c] = STMAP[status] || [status,'#9A9A9A'];
   return `<span style="display:inline-flex;align-items:center;gap:6px;font-size:11.5px;font-weight:800;color:${c};background:${c}1f;border-radius:999px;padding:6px 11px;white-space:nowrap;border:1px solid ${c}55">${t}</span>`;
@@ -258,7 +267,7 @@ function enterShell(){
   document.getElementById('top-avatar').textContent = initials;
   document.getElementById('side-username').textContent = ME.username;
   document.getElementById('side-role').textContent = ROLE_LABEL[ME.role] || ME.role;
-  buildNav(); go('dash'); startAutoRefresh();
+  buildNav(); go('dash');
 }
 
 // ── Навигация ──
@@ -282,6 +291,11 @@ function go(tab){
   document.getElementById('tab-sub').textContent = s;
   markNav();
   render();
+  // Свежие данные подтягиваем при переходе на вкладку, а не фоновым таймером
+  // каждые 15 сек — тот дёргал экран/карту в произвольный момент, даже пока
+  // ничего не открывали. Перерисовываем, только если всё ещё на этой вкладке
+  // (не успели уйти дальше, пока грузилось).
+  refreshCore().then(()=>{ if(S.tab===tab) render(); });
 }
 
 // ── Загрузка данных ──
@@ -293,17 +307,6 @@ async function refreshCore(){
     S.stats=stats; S.machines=machines; S.sessions=sessions;
   }catch(e){}
 }
-let autoT;
-function autoRefreshTick(){
-  refreshCore().then(()=>{
-    // Не перерисовываем, пока пользователь что-то вводит: иначе авто-обновление
-    // сотрёт открытую форму (товар/пользователь/слот) или собьёт фокус в поиске.
-    const a=document.activeElement;
-    if(a && (a.tagName==='INPUT'||a.tagName==='SELECT'||a.tagName==='TEXTAREA')) return;
-    render();
-  });
-}
-function startAutoRefresh(){ clearInterval(autoT); refreshCore().then(render); autoT=setInterval(autoRefreshTick,15000); }
 
 function statOf(mid){ return (S.stats?.by_machine||[]).find(m=>m.machine_id===mid) || {sales:0,revenue:0}; }
 
@@ -660,8 +663,8 @@ async function viewPoint(c){
       : '';
     const actionsBtn = canEdit()
       ? `<div style="display:flex;gap:6px">
-           <button onclick="editSlot(${s.slot_id})" title="Изменить" style="width:32px;height:32px;font-size:14px;border:1px solid var(--line);background:var(--bg);color:var(--text);border-radius:9px;cursor:pointer">✏️</button>
-           <button onclick="deleteSlot(${s.slot_id},'${esc(s.product_name)}')" title="Удалить слот" style="width:32px;height:32px;font-size:14px;border:1px solid var(--line);background:var(--bg);color:#D14343;border-radius:9px;cursor:pointer">🗑</button>
+           <button onclick="editSlot(${s.slot_id})" title="Изменить" style="width:32px;height:32px;display:grid;place-items:center;border:1px solid var(--line);background:var(--bg);color:var(--text2);border-radius:9px;cursor:pointer">${ICON_EDIT(15)}</button>
+           <button onclick="deleteSlot(${s.slot_id},'${esc(s.product_name)}')" title="Удалить слот" style="width:32px;height:32px;display:grid;place-items:center;border:1px solid var(--line);background:var(--bg);color:#D14343;border-radius:9px;cursor:pointer">${ICON_TRASH(15)}</button>
          </div>`
       : '';
     return `<div style="display:grid;grid-template-columns:60px 1.3fr 110px 150px 100px 100px 90px;gap:12px;align-items:center;padding:9px 22px;border-top:1px solid var(--line)">
@@ -680,14 +683,14 @@ async function viewPoint(c){
     <div class="cardbox" style="border-radius:22px;padding:22px;display:flex;gap:18px;flex-wrap:wrap;align-items:center">
       <div style="min-width:0">
         <div style="display:flex;align-items:center;gap:10px"><span style="width:11px;height:11px;border-radius:50%;background:${dot};animation:${anim} 2s infinite"></span><span style="font-size:20px;font-weight:800">${esc(m?m.name||m.machine_id:S.pointId)}</span>
-          ${canEdit()?`<button onclick="openEditPointModal('${esc(S.pointId)}')" title="Переименовать / изменить локацию" style="border:none;background:transparent;color:var(--text2);font-size:15px;cursor:pointer;padding:2px">✏️</button>`:''}</div>
+          ${canEdit()?`<button onclick="openEditPointModal('${esc(S.pointId)}')" title="Переименовать / изменить локацию" style="width:26px;height:26px;display:grid;place-items:center;border:none;background:var(--bg);color:var(--text2);border-radius:50%;cursor:pointer">${ICON_EDIT(13)}</button>`:''}</div>
         <div class="sub" style="margin-top:4px;margin-left:21px">${esc(m?m.location||'':'')}</div></div>
       <div style="flex:1"></div>
       <div style="display:flex;gap:10px;flex-wrap:wrap">
         <div style="background:var(--bg);border:1px solid var(--line);border-radius:14px;padding:10px 16px"><div class="sub" style="color:var(--text2)">Выручка сегодня</div><div style="font-size:19px;font-weight:800;color:var(--accent2)">${fmt(st.revenue)}</div></div>
         <div style="background:var(--bg);border:1px solid var(--line);border-radius:14px;padding:10px 16px"><div class="sub">Продаж</div><div style="font-size:19px;font-weight:800">${st.sales}</div></div>
         <div style="background:var(--bg);border:1px solid var(--line);border-radius:14px;padding:10px 16px"><div class="sub">Слотов активно</div><div style="font-size:19px;font-weight:800">${active} / ${slots.length}</div></div>
-        ${canEdit()?`<button onclick="regenToken('${esc(S.pointId)}')" title="Выдать новый токен контроллера для планшета" style="font-size:12.5px;font-weight:800;color:var(--text);background:var(--bg);border:1.5px solid var(--line);border-radius:14px;padding:10px 16px;cursor:pointer">🔑 Перевыпустить токен</button>`:''}
+        ${canEdit()?`<button onclick="regenToken('${esc(S.pointId)}')" title="Выдать новый токен контроллера для планшета" style="display:flex;align-items:center;gap:8px;font-size:12.5px;font-weight:800;color:var(--text);background:var(--bg);border:1.5px solid var(--line);border-radius:14px;padding:10px 16px;cursor:pointer">${ICON_KEY(15)}Перевыпустить токен</button>`:''}
       </div></div>`;
   const table = `<div class="cardbox" style="border-radius:22px;overflow:hidden">
     <div style="display:flex;align-items:center;gap:10px;padding:18px 22px 6px"><span style="font-size:16px;font-weight:800">Слоты и товары</span>
