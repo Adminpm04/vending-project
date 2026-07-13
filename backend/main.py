@@ -712,6 +712,22 @@ async def set_machine_location(machine_id: str, data: dict, db: Session = Depend
     return {"success": True}
 
 
+@app.post("/api/admin/machines/{machine_id}", dependencies=[Depends(require_operator)])
+async def update_machine(machine_id: str, data: dict, db: Session = Depends(get_db)):
+    """Переименовать точку / поменять локацию (machine_id и токен так не трогаются —
+    machine_id завязан на URL киоска и путь WebSocket, токен меняется отдельно
+    через regenerate-token)."""
+    m = db.query(VendingMachine).filter(VendingMachine.machine_id == machine_id).first()
+    if not m:
+        raise HTTPException(404, "machine not found")
+    if "name" in data:
+        m.name = (data["name"] or "").strip() or None
+    if "location" in data:
+        m.location = (data["location"] or "").strip() or None
+    db.commit()
+    return {"success": True}
+
+
 @app.post("/api/admin/machines/{machine_id}/slots", dependencies=[Depends(require_operator)])
 async def upsert_slot(machine_id: str, data: dict, db: Session = Depends(get_db)):
     try:
@@ -757,6 +773,17 @@ async def upsert_slot(machine_id: str, data: dict, db: Session = Depends(get_db)
         except (TypeError, ValueError):
             raise HTTPException(400, "invalid numeric value in price/stock_qty/capacity")
         db.add(slot)
+    db.commit()
+    return {"success": True}
+
+
+@app.delete("/api/admin/machines/{machine_id}/slots/{slot_id}", dependencies=[Depends(require_operator)])
+async def delete_slot(machine_id: str, slot_id: int, db: Session = Depends(get_db)):
+    slot = db.query(ProductSlot).filter(
+        ProductSlot.machine_id == machine_id, ProductSlot.slot_id == slot_id).first()
+    if not slot:
+        raise HTTPException(404, "slot not found")
+    db.delete(slot)
     db.commit()
     return {"success": True}
 
@@ -943,6 +970,7 @@ async def list_sessions(machine_id: str | None = None, db: Session = Depends(get
 @app.get("/api/admin/stats", dependencies=[Depends(require_viewer)])
 async def stats(db: Session = Depends(get_db)):
     from sqlalchemy import func
+    from datetime import timedelta
     today = datetime.utcnow().date()
     rows = db.query(
         VendingSession.machine_id,
@@ -958,6 +986,27 @@ async def stats(db: Session = Depends(get_db)):
         func.date(VendingSession.created_at) == today,
     ).scalar()
 
+    # За 14 дней — отдельным сгруппированным запросом по всей таблице (не по
+    # /api/admin/sessions, у которого лимит 200 строк: с ростом продаж график
+    # начинал занижать старые дни, т.к. они просто не попадали в выборку).
+    since = today - timedelta(days=13)
+    daily_rows = db.query(
+        func.date(VendingSession.created_at).label("day"),
+        func.coalesce(func.sum(VendingSession.amount), 0).label("revenue"),
+    ).filter(
+        VendingSession.status == SessionStatus.dispensed,
+        func.date(VendingSession.created_at) >= since,
+    ).group_by(func.date(VendingSession.created_at)).all()
+    daily_map = {
+        (r.day if isinstance(r.day, str) else r.day.isoformat()): float(r.revenue)
+        for r in daily_rows
+    }
+    daily_revenue = [
+        {"date": (since + timedelta(days=i)).isoformat(),
+         "revenue": daily_map.get((since + timedelta(days=i)).isoformat(), 0.0)}
+        for i in range(14)
+    ]
+
     return {
         "date": today.isoformat(),
         "machines_online": len(machine_clients),
@@ -967,6 +1016,7 @@ async def stats(db: Session = Depends(get_db)):
             for r in rows
         ],
         "total_revenue": float(sum(r.revenue for r in rows)),
+        "daily_revenue": daily_revenue,
     }
 
 

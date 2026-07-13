@@ -64,6 +64,11 @@
   .seg button{font-size:12.5px;font-weight:800;border:none;border-radius:9px;padding:8px 14px;cursor:pointer;transition:all .15s;background:transparent;color:var(--text2)}
   .seg button.active{background:linear-gradient(160deg,#A03050,#8B253B);color:#fff;box-shadow:0 4px 12px rgba(139,37,59,.35)}
   #toast{position:fixed;left:50%;bottom:26px;transform:translateX(-50%);z-index:80;background:rgba(17,17,17,.92);color:#F5F5F5;font-size:13.5px;font-weight:700;border-radius:999px;padding:12px 22px;box-shadow:0 16px 40px rgba(0,0,0,.35);backdrop-filter:blur(8px);animation:toastin .25s ease;white-space:nowrap}
+  /* Модалка вместо системных prompt()/alert() — под общий дизайн */
+  #modal-overlay{position:fixed;inset:0;z-index:90;background:rgba(17,17,17,.55);display:flex;align-items:center;justify-content:center;padding:20px;animation:toastin .18s ease}
+  .modal-box{background:var(--surf);border-radius:22px;box-shadow:var(--card-sh-h);padding:26px;max-width:460px;width:100%;max-height:88vh;overflow:auto}
+  .modal-box h3{font-size:18px;font-weight:800;margin:0 0 4px}
+  .modal-box .sub{margin-bottom:16px}
   /* Карта города (Leaflet + CARTO — чистый стиль в духе Google Maps) */
   #leaflet-map{height:min(600px,72vh);border-radius:22px;border:1px solid var(--line);box-shadow:var(--card-sh);z-index:0;background:var(--surf)}
   .vq-dot{width:18px;height:18px;border-radius:50%;border:3px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,.45)}
@@ -201,6 +206,17 @@ function toast(msg){ let e=document.getElementById('toast'); if(e) e.remove();
   e=document.createElement('div'); e.id='toast'; e.textContent=msg; document.body.appendChild(e);
   clearTimeout(toastT); toastT=setTimeout(()=>e.remove(),2600); }
 
+// ── Модалка (вместо system prompt()/alert(), под общий дизайн) ──
+function showModal(html){
+  closeModal();
+  const ov=document.createElement('div'); ov.id='modal-overlay';
+  ov.innerHTML=`<div class="modal-box" onclick="event.stopPropagation()">${html}</div>`;
+  ov.onclick=closeModal;
+  document.body.appendChild(ov);
+  const first=ov.querySelector('input,textarea'); if(first) setTimeout(()=>first.focus(),50);
+}
+function closeModal(){ const ov=document.getElementById('modal-overlay'); if(ov) ov.remove(); if(modalMap){ modalMap.remove(); modalMap=null; } }
+
 async function api(path, opts={}){
   const r = await fetch(path, {...opts, headers:{'Content-Type':'application/json','Authorization':'Bearer '+TOKEN, ...(opts.headers||{})}});
   if(r.status===401){ doLogout(); throw new Error('unauthorized'); }
@@ -330,11 +346,12 @@ function viewDash(){
   if(!S.stats) return loadingBlock();
   const totalSales = (S.stats.by_machine||[]).reduce((a,m)=>a+m.sales,0);
   const online = S.stats.machines_online, total = S.machines.length;
-  // график выручки 14 дней из sessions (dispensed)
-  const days=[]; const today=new Date();
-  for(let i=13;i>=0;i--){ const d=new Date(today); d.setDate(d.getDate()-i); days.push({key:d.toISOString().slice(0,10), label:String(d.getDate()), rev:0}); }
-  const dmap=Object.fromEntries(days.map(d=>[d.key,d]));
-  S.sessions.filter(s=>s.status==='dispensed').forEach(s=>{ const k=dateKey(s.created_at); if(dmap[k]) dmap[k].rev+=s.amount; });
+  // График выручки 14 дней — из S.stats.daily_revenue (посчитан на сервере по
+  // ВСЕЙ таблице сессий, не из S.sessions: тот список отдаёт максимум 200
+  // последних записей, и при активных продажах старые дни оттуда просто
+  // вымываются — график тогда красиво врёт, показывая пусто на дни, где
+  // на деле были продажи.
+  const days=(S.stats.daily_revenue||[]).map(d=>({key:d.date, label:String(new Date(d.date+'T00:00:00Z').getUTCDate()), rev:d.revenue}));
   const maxRev = Math.max(1,...days.map(d=>d.rev));
   const bars = days.map(d=>{
     const h=Math.max(4, Math.round(d.rev/maxRev*180));
@@ -522,21 +539,91 @@ function refreshUnplacedPanel(){
 }
 
 function rebuildPts(){ if(leafletMap){ leafletMap.remove(); leafletMap=null; markerLayer=null; } render(); }
-async function addPoint(){
-  const machine_id = prompt('ID автомата (например VND-002):'); if(!machine_id) return;
-  const name = prompt('Название (например №2 · ЦУМ):')||'';
-  const location = prompt('Локация:')||'';
+
+// ── Модалка «Добавить точку» — с мини-картой, чтобы место указывалось сразу
+//    при создании и точка не «терялась» без координат до отдельного шага. ──
+let modalMap=null, modalMapLatLng=null;
+function addPoint(){
+  modalMapLatLng=null;
+  showModal(`<h3>Новая точка</h3>
+    <div class="sub">Токен контроллера покажется один раз сразу после создания — сохраните его.</div>
+    <div style="display:flex;flex-direction:column;gap:10px">
+      <input id="np-id" class="fld" placeholder="ID автомата (например VND-003)">
+      <input id="np-name" class="fld" placeholder="Название (например №3 · ТЦ «Пойтахт»)">
+      <input id="np-location" class="fld" placeholder="Локация / адрес">
+      <div id="np-map" style="height:220px;border-radius:14px;overflow:hidden;border:1px solid var(--line)"></div>
+      <div class="sub" id="np-map-hint" style="margin:0">Кликните на карте, чтобы сразу отметить расположение (необязательно — можно и позже)</div>
+      <div style="display:flex;gap:10px;margin-top:6px">
+        <button class="btn-accent" style="flex:1;padding:13px" onclick="submitAddPoint()">Создать точку</button>
+        <button onclick="closeModal()" style="padding:13px 20px;border-radius:11px;border:1.5px solid var(--line);background:var(--bg);color:var(--text);font-weight:700;cursor:pointer">Отмена</button>
+      </div>
+    </div>`);
+  setTimeout(()=>{
+    const el=document.getElementById('np-map');
+    if(!el || typeof L==='undefined') return;
+    modalMap=L.map(el,{zoomControl:true,attributionControl:false}).setView(DUSHANBE,12);
+    const dark=document.documentElement.getAttribute('data-theme')==='dark';
+    L.tileLayer(dark?TILES.dark:TILES.light,{maxZoom:20,subdomains:'abcd',detectRetina:true}).addTo(modalMap);
+    let marker=null;
+    modalMap.on('click', e=>{
+      modalMapLatLng=e.latlng;
+      if(marker) modalMap.removeLayer(marker);
+      marker=L.marker(e.latlng,{icon:pinIcon('#8B253B')}).addTo(modalMap);
+      const h=document.getElementById('np-map-hint'); if(h) h.textContent='Точка будет размещена здесь';
+    });
+    setTimeout(()=>modalMap && modalMap.invalidateSize(), 80);
+  }, 60);
+}
+async function submitAddPoint(){
+  const machine_id=document.getElementById('np-id').value.trim();
+  const name=document.getElementById('np-name').value.trim();
+  const location=document.getElementById('np-location').value.trim();
+  if(!machine_id){ toast('Укажите ID автомата'); return; }
+  let r;
   try{
-    const r = await api('/api/admin/machines',{method:'POST',body:JSON.stringify({machine_id,name,location})});
-    await refreshCore(); rebuildPts();
-    alert('Точка создана.\n\nТокен контроллера (сохраните — показывается один раз):\n\n'+r.secret_token);
+    r = await api('/api/admin/machines',{method:'POST',body:JSON.stringify({machine_id,name,location})});
   }catch(e){
     if(e.message==='machine_id already exists') toast('Точка с таким ID уже есть');
     else if((e.message||'').startsWith('machine_id:')) toast('ID: только буквы, цифры, «-» и «_»');
     else toast('Не удалось создать точку');
+    return;
   }
+  if(modalMapLatLng){
+    try{ await api(`/api/admin/machines/${encodeURIComponent(machine_id)}/location`,{method:'POST',body:JSON.stringify({lat:modalMapLatLng.lat,lng:modalMapLatLng.lng})}); }catch(e){}
+  }
+  await refreshCore(); rebuildPts();
+  showModal(`<h3>Точка создана</h3>
+    <div class="sub">Токен контроллера — впишите в настройки приложения на планшете. Показывается только сейчас, второй раз его не получить — только перевыпустить новый.</div>
+    <div style="background:var(--bg);border:1px solid var(--line);border-radius:12px;padding:14px;font-family:ui-monospace,Menlo,monospace;font-size:16px;font-weight:800;word-break:break-all;user-select:all;color:var(--accent2)">${esc(r.secret_token)}</div>
+    <button class="btn-accent" style="width:100%;padding:13px;margin-top:16px" onclick="closeModal()">Понятно, сохранил</button>`);
 }
+
 function openPoint(mid){ S.pointId=mid; go('point'); }
+
+// ── Модалка «Изменить точку» — переименование/локация (ID и токен отдельно) ──
+function openEditPointModal(mid){
+  const m=S.machines.find(x=>x.machine_id===mid); if(!m) return;
+  showModal(`<h3>Изменить точку</h3>
+    <div class="sub">ID автомата «${esc(mid)}» и токен контроллера здесь не меняются</div>
+    <div style="display:flex;flex-direction:column;gap:10px">
+      <input id="ep-name" class="fld" placeholder="Название" value="${esc(m.name||'')}">
+      <input id="ep-location" class="fld" placeholder="Локация / адрес" value="${esc(m.location||'')}">
+      <div style="display:flex;gap:10px;margin-top:6px">
+        <button class="btn-accent" style="flex:1;padding:13px" onclick="submitEditPoint('${esc(mid)}')">Сохранить</button>
+        <button onclick="closeModal()" style="padding:13px 20px;border-radius:11px;border:1.5px solid var(--line);background:var(--bg);color:var(--text);font-weight:700;cursor:pointer">Отмена</button>
+      </div>
+    </div>`);
+}
+async function submitEditPoint(mid){
+  const name=document.getElementById('ep-name').value.trim();
+  const location=document.getElementById('ep-location').value.trim();
+  try{
+    await api(`/api/admin/machines/${encodeURIComponent(mid)}`,{method:'POST',body:JSON.stringify({name,location})});
+    const m=S.machines.find(x=>x.machine_id===mid); if(m){ m.name=name; m.location=location; }
+    closeModal(); toast('Сохранено'); render();
+  }catch(e){ toast('Не удалось сохранить'); }
+}
+
 async function regenToken(mid){
   if(!confirm('Выдать новый токен для этой точки?\n\nСтарый перестанет работать при следующем переподключении планшета — сразу впишите новый в настройках приложения на месте.')) return;
   try{
@@ -571,21 +658,29 @@ async function viewPoint(c){
            title="${(m&&m.online)?'Выдать этот товар удалённо':'Автомат офлайн'}"
            style="font-size:12px;font-weight:800;color:${(m&&m.online)?'#fff':'var(--text2)'};background:${(m&&m.online)?'linear-gradient(160deg,#3AA76A,#2E9E5B)':'var(--bg)'};border:1px solid ${(m&&m.online)?'transparent':'var(--line)'};border-radius:9px;padding:8px 14px;cursor:${(m&&m.online)?'pointer':'not-allowed'};white-space:nowrap">↓ Выдать</button>`
       : '';
-    return `<div style="display:grid;grid-template-columns:60px 1.5fr 130px 170px 120px 110px;gap:12px;align-items:center;padding:9px 22px;border-top:1px solid var(--line)">
+    const actionsBtn = canEdit()
+      ? `<div style="display:flex;gap:6px">
+           <button onclick="editSlot(${s.slot_id})" title="Изменить" style="width:32px;height:32px;font-size:14px;border:1px solid var(--line);background:var(--bg);color:var(--text);border-radius:9px;cursor:pointer">✏️</button>
+           <button onclick="deleteSlot(${s.slot_id},'${esc(s.product_name)}')" title="Удалить слот" style="width:32px;height:32px;font-size:14px;border:1px solid var(--line);background:var(--bg);color:#D14343;border-radius:9px;cursor:pointer">🗑</button>
+         </div>`
+      : '';
+    return `<div style="display:grid;grid-template-columns:60px 1.3fr 110px 150px 100px 100px 90px;gap:12px;align-items:center;padding:9px 22px;border-top:1px solid var(--line)">
       <span style="font-size:13.5px;font-weight:800;color:var(--accent2)">${esc(s.slot_id)}</span>
       <div style="display:flex;align-items:center;gap:10px;min-width:0">${thumb}<span style="font-size:14px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(s.product_name)}</span></div>
-      <input type="number" step="0.01" value="${s.price}" class="fld" style="width:100px" ${ro} onchange="saveSlot(${s.slot_id},'price',this.value)">
+      <input type="number" step="0.01" value="${s.price}" class="fld" style="width:90px" ${ro} onchange="saveSlot(${s.slot_id},'price',this.value)">
       <div style="display:flex;align-items:center;gap:8px">
-        <input type="number" value="${s.stock_qty}" class="fld" style="width:74px" ${ro} onchange="saveSlot(${s.slot_id},'stock_qty',this.value)">
+        <input type="number" value="${s.stock_qty}" class="fld" style="width:64px" ${ro} onchange="saveSlot(${s.slot_id},'stock_qty',this.value)">
         <span class="sub" style="white-space:nowrap">из ${s.capacity}</span></div>
       <span style="${chipS}">${status}</span>
-      <span>${dispenseBtn}</span></div>`;
+      <span>${dispenseBtn}</span>
+      <span>${actionsBtn}</span></div>`;
   }).join('');
   const header = `<div>
     <button onclick="go('pts')" style="border:none;background:transparent;color:var(--accent2);font-weight:800;font-size:13.5px;cursor:pointer;padding:0">← Все точки</button></div>
     <div class="cardbox" style="border-radius:22px;padding:22px;display:flex;gap:18px;flex-wrap:wrap;align-items:center">
       <div style="min-width:0">
-        <div style="display:flex;align-items:center;gap:10px"><span style="width:11px;height:11px;border-radius:50%;background:${dot};animation:${anim} 2s infinite"></span><span style="font-size:20px;font-weight:800">${esc(m?m.name||m.machine_id:S.pointId)}</span></div>
+        <div style="display:flex;align-items:center;gap:10px"><span style="width:11px;height:11px;border-radius:50%;background:${dot};animation:${anim} 2s infinite"></span><span style="font-size:20px;font-weight:800">${esc(m?m.name||m.machine_id:S.pointId)}</span>
+          ${canEdit()?`<button onclick="openEditPointModal('${esc(S.pointId)}')" title="Переименовать / изменить локацию" style="border:none;background:transparent;color:var(--text2);font-size:15px;cursor:pointer;padding:2px">✏️</button>`:''}</div>
         <div class="sub" style="margin-top:4px;margin-left:21px">${esc(m?m.location||'':'')}</div></div>
       <div style="flex:1"></div>
       <div style="display:flex;gap:10px;flex-wrap:wrap">
@@ -597,9 +692,9 @@ async function viewPoint(c){
   const table = `<div class="cardbox" style="border-radius:22px;overflow:hidden">
     <div style="display:flex;align-items:center;gap:10px;padding:18px 22px 6px"><span style="font-size:16px;font-weight:800">Слоты и товары</span>
       ${canEdit()?`<span class="sub" style="margin-left:auto">Клиент оплатил, но товар не выпал? Нажмите «Выдать» напротив нужного слота.</span>`:''}</div>
-    <div style="overflow-x:auto"><div style="min-width:820px">
-      <div style="display:grid;grid-template-columns:60px 1.5fr 130px 170px 120px 110px;gap:12px;padding:10px 22px;font-size:11.5px;font-weight:800;color:var(--text2);text-transform:uppercase;letter-spacing:.4px">
-        <span>Слот</span><span>Товар</span><span>Цена, сомони</span><span>Остаток</span><span>Статус</span><span>Выдача</span></div>
+    <div style="overflow-x:auto"><div style="min-width:900px">
+      <div style="display:grid;grid-template-columns:60px 1.3fr 110px 150px 100px 100px 90px;gap:12px;padding:10px 22px;font-size:11.5px;font-weight:800;color:var(--text2);text-transform:uppercase;letter-spacing:.4px">
+        <span>Слот</span><span>Товар</span><span>Цена, сомони</span><span>Остаток</span><span>Статус</span><span>Выдача</span><span>Ещё</span></div>
       ${rows || '<div class="sub" style="padding:16px 22px">Слотов пока нет'+(canEdit()?' — добавьте ниже':'')+'</div>'}
     </div></div>
     ${canEdit() ? `<div style="padding:16px 22px;border-top:1px solid var(--line);background:var(--bg)">
@@ -651,6 +746,27 @@ async function saveSlot(slot_id, field, value){
   body[field] = field==='price'?parseFloat(value):parseInt(value,10);
   try{ await api(`/api/admin/machines/${encodeURIComponent(S.pointId)}/slots`,{method:'POST',body:JSON.stringify(body)});
     toast('Сохранено'); await refreshCore(); }catch(e){ toast('Ошибка сохранения'); }
+}
+// Изменить слот: подставляем текущие значения в форму «Добавить/изменить слот» —
+// тот же upsert-эндпоинт по существующему № слота обновляет его, а не создаёт новый.
+function editSlot(slot_id){
+  const s = S.slots.find(x=>x.slot_id===slot_id); if(!s) return;
+  document.getElementById('ns-id').value = s.slot_id;
+  const sel = document.getElementById('ns-product');
+  if(s.product_id){ sel.value = String(s.product_id); onSlotProductPick(); }
+  else{ sel.value = '__custom'; onSlotProductPick(); document.getElementById('ns-prod').value = s.product_name; }
+  document.getElementById('ns-price').value = s.price;
+  document.getElementById('ns-cap').value = s.capacity;
+  document.getElementById('ns-stock').value = s.stock_qty;
+  document.getElementById('ns-id').scrollIntoView({behavior:'smooth', block:'center'});
+  toast('Правки формы ниже — измените и нажмите «Сохранить»');
+}
+async function deleteSlot(slot_id, name){
+  if(!confirm(`Удалить слот ${slot_id} («${name}») с этой точки?\n\nТовар и цена на этом слоте будут удалены — если он ещё продаётся на других точках, там ничего не изменится.`)) return;
+  try{
+    await api(`/api/admin/machines/${encodeURIComponent(S.pointId)}/slots/${slot_id}`,{method:'DELETE'});
+    toast('Слот удалён'); await refreshCore(); render();
+  }catch(e){ toast('Не удалось удалить слот'); }
 }
 async function addSlot(){
   const slot_id=parseInt(document.getElementById('ns-id').value,10);
