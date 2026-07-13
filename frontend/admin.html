@@ -189,7 +189,7 @@ function isAdmin(){ return ME && ME.role==='admin'; }
 
 // ── Утилиты ──
 function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
-function fmt(v){ return String(Math.round(v||0)).replace(/\B(?=(\d{3})+(?!\d))/g,' ') + ' c.'; }
+function fmt(v){ return String(Math.round(v||0)).replace(/\B(?=(\d{3})+(?!\d))/g,' ') + ' сомони'; }
 function chip(status){
   const [t,c] = STMAP[status] || [status,'#9A9A9A'];
   return `<span style="display:inline-flex;align-items:center;gap:6px;font-size:11.5px;font-weight:800;color:${c};background:${c}1f;border-radius:999px;padding:6px 11px;white-space:nowrap;border:1px solid ${c}55">${t}</span>`;
@@ -599,7 +599,7 @@ async function viewPoint(c){
       ${canEdit()?`<span class="sub" style="margin-left:auto">Клиент оплатил, но товар не выпал? Нажмите «Выдать» напротив нужного слота.</span>`:''}</div>
     <div style="overflow-x:auto"><div style="min-width:820px">
       <div style="display:grid;grid-template-columns:60px 1.5fr 130px 170px 120px 110px;gap:12px;padding:10px 22px;font-size:11.5px;font-weight:800;color:var(--text2);text-transform:uppercase;letter-spacing:.4px">
-        <span>Слот</span><span>Товар</span><span>Цена, c.</span><span>Остаток</span><span>Статус</span><span>Выдача</span></div>
+        <span>Слот</span><span>Товар</span><span>Цена, сомони</span><span>Остаток</span><span>Статус</span><span>Выдача</span></div>
       ${rows || '<div class="sub" style="padding:16px 22px">Слотов пока нет'+(canEdit()?' — добавьте ниже':'')+'</div>'}
     </div></div>
     ${canEdit() ? `<div style="padding:16px 22px;border-top:1px solid var(--line);background:var(--bg)">

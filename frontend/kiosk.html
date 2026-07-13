@@ -237,7 +237,7 @@ if (window.matchMedia) window.matchMedia('(prefers-color-scheme: dark)').addEven
 let session = null, pollTimer = null, countdownTimer = null, ws = null;
 const PAY_SECONDS_FALLBACK = 120; // если сервер не прислал payment_timeout
 
-function fmtPrice(v) { return (v % 1 ? v.toFixed(2).replace('.', ',') : v) + ' c.'; }
+function fmtPrice(v) { return (v % 1 ? v.toFixed(2).replace('.', ',') : v) + ' сомони'; }
 function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 function el(id) { return document.getElementById(id); }
 function show(id) { el(id).classList.remove('hidden'); }
