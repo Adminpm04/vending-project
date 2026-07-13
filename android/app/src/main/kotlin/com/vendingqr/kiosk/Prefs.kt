@@ -29,8 +29,9 @@ object Prefs {
     fun serialBaud(ctx: Context): Int = DEFAULT_BAUD
     // Планшет физически монтируется в автомат по-разному в зависимости от
     // модели корпуса — на одних точках горизонтально, на других вертикально.
-    // По умолчанию false (альбомная) — сохраняет поведение уже настроенных точек.
-    fun isPortrait(ctx: Context): Boolean = prefs(ctx).getBoolean(KEY_PORTRAIT, false)
+    // По умолчанию true (портретная) — так смонтировано большинство точек;
+    // альбомную включают вручную в настройках там, где нужно.
+    fun isPortrait(ctx: Context): Boolean = prefs(ctx).getBoolean(KEY_PORTRAIT, true)
 
     fun save(ctx: Context, machineId: String, serverUrl: String, token: String, serialPort: String, portrait: Boolean) {
         prefs(ctx).edit()
