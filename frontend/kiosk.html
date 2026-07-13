@@ -182,7 +182,7 @@
     <div class="pay-price" id="pay-price"></div>
     <div class="qr"><img id="qr-img" alt="QR"></div>
     <div class="pay-hint">Отсканируйте QR-код любым банковским приложением</div>
-    <div class="timer"><span class="d"></span><span class="t" id="timer-t">2:00</span></div>
+    <div class="timer"><span class="d"></span><span class="t">Ожидание оплаты · <span id="timer-t">2:00</span></span></div>
     <button class="btn-ghost" onclick="cancelPayment()">Отмена</button>
   </div>
 </div>
@@ -201,6 +201,7 @@
   </div>
   <div class="big-title">Заберите товар</div>
   <div class="big-sub">Спасибо за покупку!</div>
+  <button class="btn-accent" style="margin-top:10px" onclick="resetFlow()">На главную</button>
 </div>
 
 <!-- K5 Ошибка / возврат -->
@@ -208,6 +209,7 @@
   <div class="badge-err"><span>!</span></div>
   <div class="big-title">Не удалось выдать товар</div>
   <div class="big-sub" style="max-width:560px;line-height:1.5">Деньги вернутся автоматически — ничего делать не нужно</div>
+  <button class="btn-ghost" style="margin-top:8px" onclick="resetFlow()">На главную</button>
 </div>
 
 <!-- K6 Недоступен -->
@@ -234,7 +236,7 @@ function applyTheme() {
 applyTheme();
 if (window.matchMedia) window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', applyTheme);
 
-let session = null, pollTimer = null, countdownTimer = null, ws = null;
+let session = null, pollTimer = null, countdownTimer = null, ws = null, autoResetTimer = null;
 const PAY_SECONDS_FALLBACK = 120; // если сервер не прислал payment_timeout
 
 function fmtPrice(v) { return (v % 1 ? v.toFixed(2).replace('.', ',') : v) + ' сомони'; }
@@ -346,10 +348,10 @@ function handleStatus(status) {
     clearInterval(countdownTimer); hideAll(); show('ov-disp');
   } else if (status === 'dispensed') {
     clearInterval(countdownTimer); clearInterval(pollTimer);
-    hideAll(); show('ov-ok'); setTimeout(resetFlow, 8000);
+    hideAll(); show('ov-ok'); autoResetTimer = setTimeout(resetFlow, 8000);
   } else if (status === 'refund_pending' || status === 'refunded') {
     clearInterval(countdownTimer); clearInterval(pollTimer);
-    hideAll(); show('ov-err'); setTimeout(resetFlow, 9000);
+    hideAll(); show('ov-err'); autoResetTimer = setTimeout(resetFlow, 9000);
   } else if (status === 'expired' || status === 'failed') {
     resetFlow();
   }
@@ -360,12 +362,12 @@ function showError(msg) {
   el('ov-err').querySelector('.big-title').textContent = 'Ошибка';
   el('ov-err').querySelector('.big-sub').textContent = msg;
   show('ov-err');
-  setTimeout(resetFlow, 5000);
+  autoResetTimer = setTimeout(resetFlow, 5000);
 }
-function showOffline() { hideAll(); show('ov-off'); setTimeout(resetFlow, 6000); }
+function showOffline() { hideAll(); show('ov-off'); autoResetTimer = setTimeout(resetFlow, 6000); }
 
 function resetFlow() {
-  clearInterval(pollTimer); clearInterval(countdownTimer);
+  clearInterval(pollTimer); clearInterval(countdownTimer); clearTimeout(autoResetTimer);
   session = null;
   el('ov-err').querySelector('.big-title').textContent = 'Не удалось выдать товар';
   el('ov-err').querySelector('.big-sub').textContent = 'Деньги вернутся автоматически — ничего делать не нужно';
