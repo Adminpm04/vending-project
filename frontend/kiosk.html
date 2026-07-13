@@ -300,7 +300,9 @@ async function buy(p) {
   session = await r.json();
   el('pay-name').textContent = session.product;
   el('pay-price').textContent = fmtPrice(session.amount);
-  el('qr-img').src = session.qr_url;
+  // Статичный «Единый QR» терминала (выдан банком под конкретную кассу) —
+  // не генерируем сами из invoice_id, банк сверяет по терминалу открытый инвойс.
+  el('qr-img').src = '/static/payment_qr.png';
   hideAll(); show('ov-pay');
   // Отсчёт ровно столько, сколько сервер ждёт оплату — чтобы экран не сбросился
   // раньше, чем сервер перестанет принимать оплату по этому QR.
