@@ -71,10 +71,14 @@ class MainActivity : AppCompatActivity() {
      * зашита статически в манифесте.
      */
     private fun applyOrientation() {
-        requestedOrientation = if (Prefs.isPortrait(this))
-            ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
-        else
-            ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
+        val portrait = Prefs.isPortrait(this)
+        val reverse = Prefs.isReverse(this)
+        requestedOrientation = when {
+            portrait && reverse -> ActivityInfo.SCREEN_ORIENTATION_REVERSE_PORTRAIT
+            portrait -> ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+            reverse -> ActivityInfo.SCREEN_ORIENTATION_REVERSE_LANDSCAPE
+            else -> ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
+        }
     }
 
     private fun applyConfigurationState() {

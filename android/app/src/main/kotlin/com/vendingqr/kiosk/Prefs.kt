@@ -11,6 +11,7 @@ object Prefs {
     private const val KEY_TOKEN = "machine_token"
     private const val KEY_SERIAL_PORT = "serial_port"
     private const val KEY_PORTRAIT = "portrait"
+    private const val KEY_REVERSE = "reverse"
 
     private const val DEFAULT_SERVER_URL = "http://10.251.4.253:8000"
     private const val DEFAULT_SERIAL_PORT = "/dev/ttyS1"
@@ -32,14 +33,19 @@ object Prefs {
     // По умолчанию true (портретная) — так смонтировано большинство точек;
     // альбомную включают вручную в настройках там, где нужно.
     fun isPortrait(ctx: Context): Boolean = prefs(ctx).getBoolean(KEY_PORTRAIT, true)
+    // Планшет иногда вставлен в корпус развёрнутым на 180° относительно своего
+    // «естественного» верха — тогда обычная портретная/альбомная ориентация
+    // покажет содержимое вверх ногами для того, кто стоит перед автоматом.
+    fun isReverse(ctx: Context): Boolean = prefs(ctx).getBoolean(KEY_REVERSE, false)
 
-    fun save(ctx: Context, machineId: String, serverUrl: String, token: String, serialPort: String, portrait: Boolean) {
+    fun save(ctx: Context, machineId: String, serverUrl: String, token: String, serialPort: String, portrait: Boolean, reverse: Boolean) {
         prefs(ctx).edit()
             .putString(KEY_MACHINE_ID, machineId.trim())
             .putString(KEY_SERVER_URL, serverUrl.trim().ifBlank { DEFAULT_SERVER_URL })
             .putString(KEY_TOKEN, token.trim())
             .putString(KEY_SERIAL_PORT, serialPort.trim().ifBlank { DEFAULT_SERIAL_PORT })
             .putBoolean(KEY_PORTRAIT, portrait)
+            .putBoolean(KEY_REVERSE, reverse)
             .apply()
     }
 
