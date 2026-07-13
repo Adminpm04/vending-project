@@ -45,13 +45,20 @@
   .pill .dot{width:calc(var(--vscale)*10px);height:calc(var(--vscale)*10px);border-radius:50%}
   .clock{font-size:calc(var(--vscale)*19px);font-weight:700;color:var(--text2);font-variant-numeric:tabular-nums}
   .grid-wrap{flex:1;overflow:auto;padding:calc(var(--vscale)*8px) calc(var(--vscale)*22px) calc(var(--vscale)*16px)}
-  .grid{display:flex;flex-wrap:wrap}
+  /* Карточки центрируем по строке (не липнут к левому краю, особенно заметно
+     на последней неполной строке) и растим крупнее на самых широких экранах —
+     см. .card ниже, ширина колонки завязана на реальную ширину экрана
+     (--vscale), а не на ярлык «портретная/альбомная». У портретно
+     установленных планшетов ширины может быть ничуть не меньше, чем у
+     альбомных — раньше здесь стояло правило «в портрете — карточки мельче»,
+     которое было основано на неверном допущении и на широком портретном
+     экране только увеличивало пустоту снизу. */
+  .grid{display:flex;flex-wrap:wrap;justify-content:center}
   .card{background:var(--surf);border:1px solid var(--line);border-radius:calc(var(--vscale)*18px);padding:calc(var(--vscale)*12px);box-shadow:var(--card-sh);
-        cursor:pointer;transition:transform .18s,box-shadow .25s;position:relative;flex:1 1 calc(var(--vscale)*190px);max-width:calc(var(--vscale)*260px);margin:calc(var(--vscale)*8px)}
-  @media(orientation:portrait){.card{flex-basis:calc(var(--vscale)*140px);max-width:calc(var(--vscale)*200px)}}
+        cursor:pointer;transition:transform .18s,box-shadow .25s;position:relative;flex:1 1 calc(var(--vscale)*210px);max-width:calc(var(--vscale)*300px);margin:calc(var(--vscale)*10px)}
   .card:active{transform:scale(.955)}
   .card.oos{opacity:.62;cursor:not-allowed}
-  .card .ped{position:relative;height:calc(var(--vscale)*170px);border-radius:calc(var(--vscale)*14px);background:var(--ped);box-shadow:var(--ped-inner);display:flex;align-items:center;justify-content:center;overflow:hidden}
+  .card .ped{position:relative;height:calc(var(--vscale)*195px);border-radius:calc(var(--vscale)*14px);background:var(--ped);box-shadow:var(--ped-inner);display:flex;align-items:center;justify-content:center;overflow:hidden}
   .card .ped img{width:100%;height:100%;object-fit:contain}
   .card .ph{width:58%;height:76%;border-radius:12px;border:1.5px dashed var(--line);background:repeating-linear-gradient(45deg,transparent 0 9px,rgba(128,128,128,.09) 9px 18px);display:flex;align-items:center;justify-content:center}
   .card .ph span{font-family:ui-monospace,Menlo,monospace;font-size:calc(var(--vscale)*10px);color:var(--text2)}
@@ -112,8 +119,7 @@
     .pill .dot{width:clamp(9px,1.3vw,11px);height:clamp(9px,1.3vw,11px)}
     .clock{font-size:clamp(15px,2.4vw,22px)}
     .grid-wrap{padding:clamp(8px,1.5vw,10px) clamp(14px,3vw,30px) clamp(14px,2.5vw,20px)}
-    .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(clamp(128px,20vw,220px),1fr));gap:clamp(10px,2vw,20px)}
-    @media(orientation:portrait){.grid{grid-template-columns:repeat(auto-fill,minmax(clamp(120px,28vw,180px),1fr))}}
+    .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(clamp(128px,20vw,220px),1fr));gap:clamp(10px,2vw,20px);justify-content:center}
     .card{border-radius:clamp(14px,1.8vw,22px);padding:clamp(10px,1.4vw,16px);flex:none;max-width:none;margin:0}
     .card .ped{height:auto;aspect-ratio:1.12/1;border-radius:clamp(11px,1.4vw,16px);display:grid;place-items:center}
     .card .ph{display:grid;place-items:center}
