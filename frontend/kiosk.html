@@ -111,6 +111,31 @@
   .badge-err span{font-size:calc(var(--vscale)*92px);font-weight:800;color:#fff;line-height:1;margin-top:-8px}
   .hidden{display:none!important}
 
+  /* На портретном экране (планшет вертикально) свободной высоты намного
+     больше, чем на альбомном — карточка оплаты/статуса, рассчитанная под
+     альбомные пропорции, тонет в пустом пространстве сверху и снизу.
+     Каталог уже так подстраивался под портрет (см. .card выше) — делаем
+     то же самое для оплаты/выдачи/успеха/ошибки/недоступности. */
+  @media(orientation:portrait){
+    .pay-box>*:not(:first-child){margin-top:calc(var(--vscale)*22px)}
+    .ov-full>*:not(:first-child){margin-top:calc(var(--vscale)*34px)}
+    .pay-name{font-size:calc(var(--vscale)*30px)}
+    .pay-price{font-size:calc(var(--vscale)*82px)}
+    .qr{border-radius:calc(var(--vscale)*30px);padding:calc(var(--vscale)*28px)}
+    .qr img{width:calc(var(--vscale)*340px);height:calc(var(--vscale)*340px)}
+    .pay-hint{font-size:calc(var(--vscale)*25px);max-width:520px}
+    .timer{padding:calc(var(--vscale)*14px) calc(var(--vscale)*26px)}
+    .timer .d{width:14px;height:14px}
+    .timer .t{font-size:calc(var(--vscale)*23px)}
+    .btn-ghost{font-size:calc(var(--vscale)*25px);padding:calc(var(--vscale)*22px) calc(var(--vscale)*72px)}
+    .btn-accent{font-size:calc(var(--vscale)*24px);padding:calc(var(--vscale)*22px) calc(var(--vscale)*64px)}
+    .spinner{width:calc(var(--vscale)*130px);height:calc(var(--vscale)*130px);border-width:calc(var(--vscale)*10px)}
+    .big-title{font-size:calc(var(--vscale)*50px)}
+    .big-sub{font-size:calc(var(--vscale)*29px)}
+    .badge-ok,.badge-err{width:calc(var(--vscale)*210px);height:calc(var(--vscale)*210px)}
+    .badge-err span{font-size:calc(var(--vscale)*112px)}
+  }
+
   /* Улучшение поверх резервных правил выше: на любом браузере, который
      ПОНИМАЕТ clamp() — а старый WebView на киоск-планшетах не понимает,
      для того и нужны были все правила выше — включается оригинальный
