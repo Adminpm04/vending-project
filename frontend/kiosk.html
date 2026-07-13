@@ -37,38 +37,42 @@
   #app{position:fixed;top:0;right:0;bottom:0;left:0;display:flex;flex-direction:column}
   .hdr{display:flex;align-items:center;padding:calc(var(--vscale)*16px) calc(var(--vscale)*20px) calc(var(--vscale)*12px);flex:none}
   .hdr>*:not(:first-child){margin-left:calc(var(--vscale)*12px)}
-  .hdr h1{font-size:calc(var(--vscale)*22px);font-weight:800;line-height:1.15;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin:0}
-  .hdr .sub{font-size:calc(var(--vscale)*13px);font-weight:500;color:var(--text2);margin-top:2px}
+  .hdr h1{font-size:calc(var(--vscale)*26px);font-weight:800;line-height:1.15;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin:0}
+  .hdr .sub{font-size:calc(var(--vscale)*15px);font-weight:500;color:var(--text2);margin-top:2px}
   .pill{display:flex;align-items:center;background:var(--surf);border:1px solid var(--line);border-radius:999px;padding:calc(var(--vscale)*8px) calc(var(--vscale)*14px);box-shadow:var(--card-sh)}
   .pill>*:not(:first-child){margin-left:calc(var(--vscale)*8px)}
   .pill span:last-child{font-size:calc(var(--vscale)*14px)}
   .pill .dot{width:calc(var(--vscale)*10px);height:calc(var(--vscale)*10px);border-radius:50%}
   .clock{font-size:calc(var(--vscale)*19px);font-weight:700;color:var(--text2);font-variant-numeric:tabular-nums}
-  .grid-wrap{flex:1;overflow:auto;padding:calc(var(--vscale)*8px) calc(var(--vscale)*22px) calc(var(--vscale)*16px)}
-  /* Карточки центрируем по строке (не липнут к левому краю, особенно заметно
-     на последней неполной строке) и растим крупнее на самых широких экранах —
-     см. .card ниже, ширина колонки завязана на реальную ширину экрана
-     (--vscale), а не на ярлык «портретная/альбомная». У портретно
-     установленных планшетов ширины может быть ничуть не меньше, чем у
-     альбомных — раньше здесь стояло правило «в портрете — карточки мельче»,
-     которое было основано на неверном допущении и на широком портретном
-     экране только увеличивало пустоту снизу. */
+  .grid-wrap{flex:1;overflow:auto;padding:calc(var(--vscale)*10px) calc(var(--vscale)*28px) calc(var(--vscale)*20px)}
+  /* Число колонок задано явно — 4 в альбомной, 2 в портретной — а не «сколько
+     влезет по ширине»: у портретно установленных планшетов ширины может
+     хватать на 5-6 мелких карточек в ряд, отчего внизу оставалась пустая
+     половина экрана. Меньше колонок → крупнее и «дороже» карточки → больше
+     строк → сетка сама естественно заполняет высокий экран, без специальных
+     трюков на заполнение пустоты. Проценты вместо px во flex-basis — тот же
+     эффект, что у CSS Grid с repeat(N,1fr), но без display:grid (на всякий
+     случай — эта раскладка уже подтверждённо работает на старом WebView,
+     не хотим рисковать непроверенным). */
   .grid{display:flex;flex-wrap:wrap;justify-content:center}
-  .card{background:var(--surf);border:1px solid var(--line);border-radius:calc(var(--vscale)*18px);padding:calc(var(--vscale)*12px);box-shadow:var(--card-sh);
-        cursor:pointer;transition:transform .18s,box-shadow .25s;position:relative;flex:1 1 calc(var(--vscale)*210px);max-width:calc(var(--vscale)*300px);margin:calc(var(--vscale)*10px)}
+  .card{background:var(--surf);border:1px solid var(--line);border-radius:calc(var(--vscale)*22px);padding:calc(var(--vscale)*16px);box-shadow:var(--card-sh);
+        cursor:pointer;transition:transform .18s,box-shadow .25s;position:relative;
+        flex:0 1 calc(25% - var(--vscale)*20px);max-width:calc(25% - var(--vscale)*20px);margin:calc(var(--vscale)*10px)}
+  @media(orientation:portrait){.card{flex-basis:calc(50% - var(--vscale)*20px);max-width:calc(50% - var(--vscale)*20px)}}
   .card:active{transform:scale(.955)}
   .card.oos{opacity:.62;cursor:not-allowed}
-  .card .ped{position:relative;height:calc(var(--vscale)*195px);border-radius:calc(var(--vscale)*14px);background:var(--ped);box-shadow:var(--ped-inner);display:flex;align-items:center;justify-content:center;overflow:hidden}
+  .card .ped{position:relative;height:calc(var(--vscale)*190px);border-radius:calc(var(--vscale)*16px);background:var(--ped);box-shadow:var(--ped-inner);display:flex;align-items:center;justify-content:center;overflow:hidden}
+  @media(orientation:portrait){.card .ped{height:calc(var(--vscale)*260px)}}
   .card .ped img{width:100%;height:100%;object-fit:contain}
   .card .ph{width:58%;height:76%;border-radius:12px;border:1.5px dashed var(--line);background:repeating-linear-gradient(45deg,transparent 0 9px,rgba(128,128,128,.09) 9px 18px);display:flex;align-items:center;justify-content:center}
   .card .ph span{font-family:ui-monospace,Menlo,monospace;font-size:calc(var(--vscale)*10px);color:var(--text2)}
   .card .shadow{position:absolute;left:12%;right:12%;bottom:7px;height:10px;border-radius:50%;background:radial-gradient(ellipse,rgba(0,0,0,.22),transparent 70%)}
   .card .oosbadge{position:absolute;top:0;right:0;bottom:0;left:0;display:flex;align-items:center;justify-content:center;background:var(--glass)}
   .card .oosbadge span{font-size:calc(var(--vscale)*13px);font-weight:800;color:#D14343;background:var(--surf);border:1px solid var(--line);border-radius:999px;padding:calc(var(--vscale)*7px) calc(var(--vscale)*13px)}
-  .card .name{margin-top:calc(var(--vscale)*12px);font-size:calc(var(--vscale)*16px);font-weight:700;line-height:1.25;min-height:2.5em}
+  .card .name{margin-top:calc(var(--vscale)*14px);font-size:calc(var(--vscale)*19px);font-weight:700;line-height:1.25;min-height:2.5em}
   .card .row{display:flex;align-items:center;justify-content:space-between;margin-top:8px}
-  .card .price{font-size:calc(var(--vscale)*24px);font-weight:800;color:var(--accent2);letter-spacing:-.5px}
-  .card .slot{font-size:calc(var(--vscale)*12px);font-weight:700;color:var(--text2);background:var(--bg);border:1px solid var(--line);border-radius:999px;padding:calc(var(--vscale)*4px) calc(var(--vscale)*9px);white-space:nowrap;margin-left:6px}
+  .card .price{font-size:calc(var(--vscale)*29px);font-weight:800;color:var(--accent2);letter-spacing:-.5px}
+  .card .slot{font-size:calc(var(--vscale)*13px);font-weight:700;color:var(--text2);background:var(--bg);border:1px solid var(--line);border-radius:999px;padding:calc(var(--vscale)*5px) calc(var(--vscale)*11px);white-space:nowrap;margin-left:6px}
   .foot{flex:none;text-align:center;padding:calc(var(--vscale)*12px);font-size:calc(var(--vscale)*14px);font-weight:600;color:var(--text2);border-top:1px solid var(--line)}
   .overlay{position:fixed;top:0;right:0;bottom:0;left:0;z-index:10;display:flex;align-items:center;justify-content:center;padding:calc(var(--vscale)*22px)}
   .ov-pay{background:var(--glass);-webkit-backdrop-filter:blur(22px);backdrop-filter:blur(22px);animation:fadeup .35s ease}
