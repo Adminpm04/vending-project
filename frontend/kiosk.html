@@ -75,7 +75,16 @@
   .card .slot{font-size:calc(var(--vscale)*13px);font-weight:700;color:var(--text2);background:var(--bg);border:1px solid var(--line);border-radius:999px;padding:calc(var(--vscale)*5px) calc(var(--vscale)*11px);white-space:nowrap;margin-left:6px}
   .foot{flex:none;text-align:center;padding:calc(var(--vscale)*12px);font-size:calc(var(--vscale)*14px);font-weight:600;color:var(--text2);border-top:1px solid var(--line)}
   .overlay{position:fixed;top:0;right:0;bottom:0;left:0;z-index:10;display:flex;align-items:center;justify-content:center;padding:calc(var(--vscale)*30px)}
-  .ov-pay{background:var(--glass);-webkit-backdrop-filter:blur(22px);backdrop-filter:blur(22px);-webkit-animation:fadeup .35s ease;animation:fadeup .35s ease}
+  /* Сплошной непрозрачный фон по умолчанию — на старом WebView backdrop-filter
+     не работает вообще, и оплата тогда просто накладывается поверх чёткого
+     каталога вместо полноэкранного перехода. @supports с feature-детектом
+     самого backdrop-filter (а не clamp()) — там, где размытие реально
+     поддерживается, включаем красивое стекло; иначе остаёмся на сплошном
+     фоне, который и выглядит, и работает как переход на новый экран. */
+  .ov-pay{background:var(--bg);-webkit-animation:fadeup .35s ease;animation:fadeup .35s ease}
+  @supports ((backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px))){
+    .ov-pay{background:var(--glass);-webkit-backdrop-filter:blur(22px);backdrop-filter:blur(22px)}
+  }
   .ov-full{background:var(--bg);flex-direction:column;text-align:center;-webkit-animation:fadeup .3s ease;animation:fadeup .3s ease}
   .ov-full>*:not(:first-child){margin-top:calc(var(--vscale)*26px)}
   .pay-box{display:flex;flex-direction:column;align-items:center;max-width:560px;width:100%}
