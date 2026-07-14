@@ -1166,6 +1166,18 @@ async def admin_check_elevator(machine_id: str):
     return await check_elevator_status(machine_id)
 
 
+@app.post("/api/admin/machines/{machine_id}/check-slot", dependencies=[Depends(require_operator)])
+async def admin_check_slot(machine_id: str, data: dict):
+    """Диагностика: спросить датчик про конкретный слот (0x01/0x02) прямо
+    сейчас, без покупки — та же проверка, что идёт перед оплатой, но
+    доступна вручную из админки для отладки."""
+    if data.get("slot_id") in (None, ""):
+        raise HTTPException(400, "slot_id required")
+    if machine_id not in machine_clients:
+        raise HTTPException(503, "machine offline")
+    return await check_slot_stock(machine_id, int(data["slot_id"]))
+
+
 @app.get("/api/admin/blacklist", dependencies=[Depends(require_admin)])
 async def list_blacklist(db: Session = Depends(get_db)):
     rows = db.query(Blacklist).order_by(Blacklist.added_at.desc()).all()
