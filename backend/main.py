@@ -287,8 +287,16 @@ async def poll_payment(session_id: int, invoice_id: str):
             def _check_blacklist():
                 db = SessionLocal()
                 try:
-                    return phone and db.query(Blacklist).filter(
-                        Blacklist.phone_number == phone).first() is not None
+                    # JetQR отдаёт номер клиента замаскированным (только
+                    # последние 4 цифры видны, напр. "*******0400") — точное
+                    # совпадение с полным номером, который оператор ввёл в
+                    # чёрный список, никогда не сработает. Сверяем по
+                    # последним 4 цифрам — это всё, что у нас реально есть.
+                    if not phone or len(phone) < 4:
+                        return False
+                    suffix = phone[-4:]
+                    return db.query(Blacklist).filter(
+                        Blacklist.phone_number.like(f"%{suffix}")).first() is not None
                 finally:
                     db.close()
             blacklisted = await _db(_check_blacklist)
@@ -1130,9 +1138,14 @@ async def list_blacklist(db: Session = Depends(get_db)):
 
 @app.post("/api/admin/blacklist", dependencies=[Depends(require_admin)])
 async def add_blacklist(data: dict, db: Session = Depends(get_db)):
-    phone = (data.get("phone_number") or "").strip()
-    if not phone:
-        raise HTTPException(400, "phone_number required")
+    raw = (data.get("phone_number") or "").strip()
+    # Сверяем оплату только по последним 4 цифрам (см. _check_blacklist —
+    # это всё, что JetQR вообще присылает), поэтому храним нормализованный
+    # номер (только цифры, без +/пробелов/скобок), иначе несовпадающий
+    # формат ввода молча сломает совпадение по хвосту.
+    phone = re.sub(r"\D", "", raw)
+    if len(phone) < 4:
+        raise HTTPException(400, "phone_number must have at least 4 digits")
     if db.query(Blacklist).filter(Blacklist.phone_number == phone).first():
         raise HTTPException(409, "phone already blacklisted")
     db.add(Blacklist(phone_number=phone, reason=data.get("reason")))
