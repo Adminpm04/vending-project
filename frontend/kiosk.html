@@ -271,6 +271,7 @@ applyTheme();
 if (window.matchMedia) window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', applyTheme);
 
 let session = null, pollTimer = null, countdownTimer = null, ws = null, autoResetTimer = null;
+let supportPhone = ''; // приходит с сервером в /products, показываем при сбое выдачи
 const PAY_SECONDS_FALLBACK = 120; // если сервер не прислал payment_timeout
 
 function fmtPrice(v) { return (v % 1 ? v.toFixed(2).replace('.', ',') : v) + ' сомони'; }
@@ -295,6 +296,7 @@ async function loadCatalog() {
     el('on-dot').style.background = data.online ? '#2E9E5B' : '#D14343';
     el('on-dot').style.animation = (data.online ? 'glowdot' : 'glowdotred') + ' 2s infinite';
     el('on-text').textContent = data.online ? 'Онлайн' : 'Офлайн';
+    supportPhone = data.support_phone || '';
 
     const cat = el('catalog');
     cat.innerHTML = '';
@@ -384,18 +386,31 @@ function handleStatus(status) {
     clearInterval(countdownTimer); clearInterval(pollTimer);
     hideAll(); show('ov-ok'); autoResetTimer = setTimeout(resetFlow, 8000);
   } else if (status === 'refund_pending' || status === 'refunded') {
+    // Автовозврат — сейчас только для блокировки по чёрному списку.
     clearInterval(countdownTimer); clearInterval(pollTimer);
+    setErrText('Не удалось выдать товар', 'Деньги вернутся автоматически — ничего делать не нужно');
     hideAll(); show('ov-err'); autoResetTimer = setTimeout(resetFlow, 9000);
-  } else if (status === 'expired' || status === 'failed') {
+  } else if (status === 'failed') {
+    // Оплата прошла, а товар не выпал — денег без звонка не возвращаем,
+    // оператор сам решит (выдать вручную или вернуть деньги).
+    clearInterval(countdownTimer); clearInterval(pollTimer);
+    setErrText('Товар не выдан', supportPhone
+      ? `Позвоните по номеру ${supportPhone} — вам дадут напиток или вернут деньги`
+      : 'Обратитесь к оператору — вам дадут напиток или вернут деньги');
+    hideAll(); show('ov-err'); autoResetTimer = setTimeout(resetFlow, 15000);
+  } else if (status === 'expired') {
     resetFlow();
   }
 }
 
+function setErrText(title, sub) {
+  el('ov-err').querySelector('.big-title').textContent = title;
+  el('ov-err').querySelector('.big-sub').textContent = sub;
+}
+
 function showError(msg) {
-  hideAll();
-  el('ov-err').querySelector('.big-title').textContent = 'Ошибка';
-  el('ov-err').querySelector('.big-sub').textContent = msg;
-  show('ov-err');
+  setErrText('Ошибка', msg);
+  hideAll(); show('ov-err');
   autoResetTimer = setTimeout(resetFlow, 5000);
 }
 function showOffline() { hideAll(); show('ov-off'); autoResetTimer = setTimeout(resetFlow, 6000); }
@@ -403,8 +418,6 @@ function showOffline() { hideAll(); show('ov-off'); autoResetTimer = setTimeout(
 function resetFlow() {
   clearInterval(pollTimer); clearInterval(countdownTimer); clearTimeout(autoResetTimer);
   session = null;
-  el('ov-err').querySelector('.big-title').textContent = 'Не удалось выдать товар';
-  el('ov-err').querySelector('.big-sub').textContent = 'Деньги вернутся автоматически — ничего делать не нужно';
   hideAll();
   loadCatalog();
 }
@@ -419,6 +432,7 @@ function connectWS() {
     if (!session || msg.session_id !== session.session_id) return;
     if (msg.type === 'paid') handleStatus('paid');
     else if (msg.type === 'dispensed') handleStatus('dispensed');
+    else if (msg.type === 'failed') handleStatus('failed');
     else if (msg.type === 'refund_started' || msg.type === 'refunded' || msg.type === 'refund_failed') handleStatus('refund_pending');
     else if (msg.type === 'payment_timeout') resetFlow();
   };

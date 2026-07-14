@@ -114,6 +114,7 @@ async def kiosk_products(machine_id: str, db: Session = Depends(get_db)):
         "name": machine.name,
         "location": machine.location,
         "online": machine_id in machine_clients,
+        "support_phone": settings.SUPPORT_PHONE,
         "products": [
             {
                 "slot_id": s.slot_id,
@@ -341,15 +342,15 @@ async def poll_payment(session_id: int, invoice_id: str):
 
 # ─── DISPENSE FLOW ───────────────────────────────────────────────────────────
 
-async def dispense(session_id: int, machine_id: str, slot_id: int, refund_on_fail: bool = True) -> dict:
+async def dispense(session_id: int, machine_id: str, slot_id: int) -> dict:
     """Отправляет команду выдачи контроллеру, ждёт результат VMC.
-    Возвращает {"ok": bool, "message": str}. При refund_on_fail=False (ручная
-    выдача оператором) деньги при сбое не возвращаются — только помечаем ошибку."""
+    Возвращает {"ok": bool, "message": str}. Сбой НЕ возвращает деньги
+    автоматически — сессия помечается ошибкой (failed), клиенту на кассе
+    показывается номер поддержки, оператор сам решает через админку: выдать
+    товар удалённо или запустить возврат вручную (retry-refund)."""
     async def _fail(reason: str) -> dict:
-        if refund_on_fail:
-            await _start_refund(session_id, reason)
-        else:
-            await _db(lambda: _mark_session_failed(session_id, reason))
+        await _db(lambda: _mark_session_failed(session_id, reason))
+        await notify_kiosk(machine_id, {"type": "failed", "session_id": session_id})
         return {"ok": False, "message": reason}
 
     ws = machine_clients.get(machine_id)
@@ -1067,10 +1068,17 @@ async def stats(db: Session = Depends(get_db)):
 
 @app.post("/api/admin/sessions/{session_id}/retry-refund", dependencies=[Depends(require_operator)])
 async def retry_refund(session_id: int, db: Session = Depends(get_db)):
-    """Повторить возврат для зависшей refund_pending сессии."""
+    """Запустить возврат вручную: зависшая refund_pending-сессия (авто-возврат
+    не прошёл, напр. блокировка по чёрному списку) или failed-сессия с
+    реальной оплатой (сбой выдачи, где авто-возврата теперь нет — оператор
+    решает после звонка клиента, отдавать товар или вернуть деньги)."""
     s = db.query(VendingSession).filter(VendingSession.id == session_id).first()
-    if not s or s.status != SessionStatus.refund_pending:
-        raise HTTPException(404, "no refund-pending session")
+    ok_status = s and (
+        s.status == SessionStatus.refund_pending
+        or (s.status == SessionStatus.failed and s.paid_at is not None)
+    )
+    if not ok_status:
+        raise HTTPException(404, "no refundable session")
     asyncio.create_task(_start_refund(session_id, s.error or "manual retry"))
     return {"success": True}
 
@@ -1106,7 +1114,7 @@ async def force_dispense(machine_id: str, data: dict, user: AdminUser = Depends(
         finally:
             db.close()
     session_id = await _db(_create)
-    result = await dispense(session_id, machine_id, slot_id, refund_on_fail=False)
+    result = await dispense(session_id, machine_id, slot_id)
     return {"success": result["ok"], "message": result["message"], "session_id": session_id}
 
 

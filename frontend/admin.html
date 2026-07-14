@@ -840,7 +840,11 @@ function viewSess(){
   if(S.fq){ const q=S.fq.toLowerCase(); list=list.filter(s=>(s.id+'').includes(q)||(s.phone_number||'').toLowerCase().includes(q)); }
   const rows = list.map(r=>{
     const m=S.machines.find(x=>x.machine_id===r.machine_id);
-    const retry = (r.status==='refund_pending' && canEdit()) ? `<button onclick="retryRefund(${r.id})" style="font-size:12px;font-weight:800;color:var(--accent2);background:var(--accsoft);border:1.5px solid var(--accent2);border-radius:999px;padding:7px 13px;cursor:pointer;white-space:nowrap">↺ Повторить возврат</button>`:'';
+    // Возврат вручную: зависший refund_pending (напр. блокировка по чёрному
+    // списку) — «повторить»; failed с реальной оплатой (сбой выдачи, авто-
+    // возврата для него больше нет, решает оператор после звонка клиента) — «вернуть».
+    const canRefund = r.status==='refund_pending' || (r.status==='failed' && r.paid_at);
+    const retry = (canRefund && canEdit()) ? `<button onclick="retryRefund(${r.id})" style="font-size:12px;font-weight:800;color:var(--accent2);background:var(--accsoft);border:1.5px solid var(--accent2);border-radius:999px;padding:7px 13px;cursor:pointer;white-space:nowrap">↺ ${r.status==='failed'?'Вернуть деньги':'Повторить возврат'}</button>`:'';
     return `<div style="display:grid;grid-template-columns:150px 1.1fr 52px 1.2fr 84px 128px 150px 1.2fr 88px 160px;gap:10px;align-items:center;padding:10px 18px;border-top:1px solid var(--line)">
       <span style="font-family:ui-monospace,Menlo,monospace;font-size:11.5px;color:var(--text2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">#${r.id}</span>
       <span style="font-size:13px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(m?m.name||m.machine_id:r.machine_id)}</span>
