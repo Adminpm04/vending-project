@@ -109,6 +109,11 @@ object VmcProtocol {
         return buildPacket(CMD_CHECK_SELECTION, packNo, text)
     }
 
+    /** 0x05 с selection=0x0000 — «отменить выбор» (по умолчанию так трактуется
+     * VMC, когда эту команду шлёт upper computer). Сброс зависшего внутреннего
+     * состояния выбора после серии сбоев подряд. */
+    fun buildCancelSelection(packNo: Int): ByteArray = buildPacket(CMD_SELECT_CANCEL, packNo, byteArrayOf(0, 0))
+
     /**
      * 0x06 — выдача с явным включением drop-sensor / лифта. Это команда, которую
      * реально использует проверенное заводское приложение на этом железе

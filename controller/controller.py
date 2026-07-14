@@ -92,6 +92,11 @@ class VMCLink:
         # вскрытия автомата.
         self._outbox.append(vmc.build_elevator_status_req(self._next_pack_no()))
 
+    def queue_cancel_selection(self):
+        # Команда 0x05 с selection=0x0000 — «отменить выбор». Сброс зависшего
+        # внутреннего состояния VMC после серии сбоев подряд.
+        self._outbox.append(vmc.build_cancel_selection(self._next_pack_no()))
+
     def queue_sync(self):
         self._outbox.append(vmc.build_sync(self._next_pack_no()))
 
@@ -187,6 +192,9 @@ async def ws_loop(link: VMCLink):
                     elif msg.get("type") == "check_elevator":
                         asyncio.create_task(
                             handle_check_elevator(link, ws, msg["request_id"]))
+                    elif msg.get("type") == "cancel_selection":
+                        asyncio.create_task(
+                            handle_cancel_selection(link, ws, msg["request_id"]))
         except Exception as e:
             log.warning(f"WS disconnected: {e}; retry in {backoff}s")
             await asyncio.sleep(backoff)
@@ -296,6 +304,21 @@ async def handle_check_elevator(link: VMCLink, ws, request_id: str):
             "checked": False, "ok": True, "message": "VMC response timeout",
         }
     log.info(f"Elevator state: {result}")
+    await ws.send(json.dumps(result))
+
+
+async def handle_cancel_selection(link: VMCLink, ws, request_id: str):
+    """Запрос сервера "отменить выбор" (0x05) — без содержательного ответа
+    от VMC, только подтверждение отправки."""
+    log.info(f"Cancel-selection request: request_id={request_id}")
+    if not link._serial.is_open:
+        result = {"type": "cancel_selection_result", "request_id": request_id,
+                  "sent": False, "message": "Serial port not open"}
+    else:
+        link.queue_cancel_selection()
+        result = {"type": "cancel_selection_result", "request_id": request_id,
+                  "sent": True, "message": "Command queued"}
+    log.info(f"Cancel selection: {result}")
     await ws.send(json.dumps(result))
 
 

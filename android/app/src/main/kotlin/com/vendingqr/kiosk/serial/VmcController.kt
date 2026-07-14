@@ -77,6 +77,10 @@ class VmcController(
                 val requestId = msg.optString("request_id")
                 executor.submit { handleCheckElevator(requestId) }
             }
+            "cancel_selection" -> {
+                val requestId = msg.optString("request_id")
+                executor.submit { handleCancelSelection(requestId) }
+            }
         }
     }
 
@@ -182,6 +186,30 @@ class VmcController(
         } else {
             sendElevatorState(requestId, checked = false, ok = true, message = "VMC response timeout")
         }
+    }
+
+    private fun handleCancelSelection(requestId: String) {
+        Log.i(TAG, "cancel-selection request: request_id=$requestId")
+
+        val result = JSONObject().apply {
+            put("type", "cancel_selection_result")
+            put("request_id", requestId)
+        }
+
+        if (!link.isRunning) {
+            result.put("sent", false).put("message", "Serial port not open")
+            Log.i(TAG, "cancel selection: $result")
+            ws.send(result)
+            return
+        }
+
+        // Команда без содержательного ответа от VMC (см. протокол) — просто
+        // отправляем и сообщаем об этом, реальный эффект проверяется отдельно
+        // через check_slot.
+        link.queueCancelSelection()
+        result.put("sent", true).put("message", "Command queued")
+        Log.i(TAG, "cancel selection: $result")
+        ws.send(result)
     }
 
     private fun sendElevatorState(requestId: String, checked: Boolean, ok: Boolean, message: String) {

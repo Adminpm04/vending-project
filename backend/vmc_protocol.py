@@ -106,6 +106,14 @@ def build_check_selection(pack_no: int, slot_id: int) -> bytes:
     return build_packet(CMD_CHECK_SELECTION, pack_no, slot_id.to_bytes(2, "big"))
 
 
+def build_cancel_selection(pack_no: int) -> bytes:
+    """0x05 с selection=0x0000 — «отменить выбор». По документации: когда ЭТУ
+    команду шлёт upper computer, она по умолчанию трактуется VMC как отмена
+    текущего выбора — сброс на случай, если внутреннее состояние VMC зависло
+    на незавершённом выборе после серии сбоев подряд."""
+    return build_packet(CMD_SELECT_CANCEL, pack_no, (0).to_bytes(2, "big"))
+
+
 def build_drive_direct(pack_no: int, slot_id: int,
                        drop_sensor: bool = True, elevator: bool = False) -> bytes:
     """0x06 — выдача с явным включением drop-sensor / лифта."""

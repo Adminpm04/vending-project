@@ -39,6 +39,8 @@ _slot_check_waiters: dict[str, asyncio.Future] = {}
 SLOT_CHECK_TIMEOUT = 4  # секунд — не держим клиента перед QR дольше этого
 # request_id -> Future с результатом проверки лифта/дверцы (диагностика оператора)
 _elevator_check_waiters: dict[str, asyncio.Future] = {}
+# request_id -> Future с подтверждением отправки «отмены выбора» (диагностика)
+_cancel_selection_waiters: dict[str, asyncio.Future] = {}
 
 
 async def _db(fn):
@@ -184,6 +186,29 @@ async def check_elevator_status(machine_id: str) -> dict:
     if not result.get("checked", True):
         return {"checked": False}
     return {"checked": True, "ok": bool(result.get("ok")), "message": result.get("message")}
+
+
+async def send_cancel_selection(machine_id: str) -> dict:
+    """Команда 0x05 с selection=0x0000 — «отменить выбор». По протоколу без
+    содержательного ответа от VMC, только подтверждение, что контроллер её
+    отправил. Диагностика: сброс зависшего внутреннего состояния VMC после
+    серии сбоев подряд («Selection pause» на всех слотах разом)."""
+    ws = machine_clients.get(machine_id)
+    if ws is None:
+        return {"sent": False}
+
+    request_id = str(uuid.uuid4())
+    future: asyncio.Future = asyncio.get_event_loop().create_future()
+    _cancel_selection_waiters[request_id] = future
+    try:
+        await ws.send_text(json.dumps({"type": "cancel_selection", "request_id": request_id}))
+        result = await asyncio.wait_for(future, timeout=SLOT_CHECK_TIMEOUT)
+    except Exception:
+        return {"sent": False}
+    finally:
+        _cancel_selection_waiters.pop(request_id, None)
+
+    return {"sent": bool(result.get("sent")), "message": result.get("message")}
 
 
 @app.post("/api/kiosk/{machine_id}/buy")
@@ -555,6 +580,10 @@ async def machine_ws(websocket: WebSocket, machine_id: str):
                     waiter.set_result(msg)
             elif msg.get("type") == "elevator_state":
                 waiter = _elevator_check_waiters.get(msg.get("request_id"))
+                if waiter and not waiter.done():
+                    waiter.set_result(msg)
+            elif msg.get("type") == "cancel_selection_result":
+                waiter = _cancel_selection_waiters.get(msg.get("request_id"))
                 if waiter and not waiter.done():
                     waiter.set_result(msg)
             # type=="pong"/прочее — игнорируем
@@ -1176,6 +1205,16 @@ async def admin_check_slot(machine_id: str, data: dict):
     if machine_id not in machine_clients:
         raise HTTPException(503, "machine offline")
     return await check_slot_stock(machine_id, int(data["slot_id"]))
+
+
+@app.post("/api/admin/machines/{machine_id}/cancel-selection", dependencies=[Depends(require_operator)])
+async def admin_cancel_selection(machine_id: str):
+    """Диагностика: отправить «отмена выбора» (0x05) — сброс внутреннего
+    состояния VMC, если оно зависло на незавершённом выборе после серии
+    сбоев подряд. Эффект проверять отдельно через check-slot."""
+    if machine_id not in machine_clients:
+        raise HTTPException(503, "machine offline")
+    return await send_cancel_selection(machine_id)
 
 
 @app.get("/api/admin/blacklist", dependencies=[Depends(require_admin)])

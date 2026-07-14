@@ -62,6 +62,11 @@ class VmcLink(private val devicePath: String, private val baudRate: Int) {
     }
 
     @Synchronized
+    fun queueCancelSelection() {
+        outbox.addLast(VmcProtocol.buildCancelSelection(nextPackNo()))
+    }
+
+    @Synchronized
     private fun queueSync() {
         outbox.addLast(VmcProtocol.buildSync(nextPackNo()))
     }
