@@ -103,12 +103,10 @@ async def _ws_heartbeat():
 
 @app.get("/api/kiosk/{machine_id}/products")
 async def kiosk_products(machine_id: str, db: Session = Depends(get_db)):
-    machine = db.query(VendingMachine).filter(
-        VendingMachine.machine_id == machine_id,
-        VendingMachine.is_active == True,
-    ).first()
+    machine = _find_machine(db, machine_id)
     if not machine:
         raise HTTPException(404, "machine not found")
+    machine_id = machine.machine_id  # канонический ID — см. _find_machine
     slots = db.query(ProductSlot).filter(
         ProductSlot.machine_id == machine_id,
         ProductSlot.is_active == True,
@@ -219,12 +217,10 @@ async def kiosk_buy(machine_id: str, data: dict, db: Session = Depends(get_db)):
     except (KeyError, TypeError, ValueError):
         raise HTTPException(400, "slot_id required")
 
-    machine = db.query(VendingMachine).filter(
-        VendingMachine.machine_id == machine_id,
-        VendingMachine.is_active == True,
-    ).first()
+    machine = _find_machine(db, machine_id)
     if not machine:
         raise HTTPException(404, "machine not found")
+    machine_id = machine.machine_id  # канонический ID — см. _find_machine
     if machine_id not in machine_clients:
         raise HTTPException(503, "machine offline")
 
@@ -539,12 +535,11 @@ async def machine_ws(websocket: WebSocket, machine_id: str):
     def _auth():
         db = SessionLocal()
         try:
-            m = db.query(VendingMachine).filter(
-                VendingMachine.machine_id == machine_id,
-                VendingMachine.is_active == True,
-            ).first()
+            # ID автомата тоже вводится руками на планшете — та же поблажка
+            # на опечатки в регистре/дефисе, что и у токена (см. _find_machine).
+            m = _find_machine(db, machine_id)
             if m is None:
-                return False
+                return None
             # Токен набирается руками на экранной клавиатуре: автозамена дефиса
             # на другое тире (—/–) или случайная смена регистра — обычное дело
             # и не должны считаться неверным токеном. Сверяем только буквы/цифры,
@@ -552,13 +547,17 @@ async def machine_ws(websocket: WebSocket, machine_id: str):
             # никогда не бросает TypeError, в отличие от сырых строк с юникодом.
             expected = _normalize_token(m.secret_token)
             got = _normalize_token(token or "")
-            return secrets.compare_digest(expected.encode(), got.encode())
+            if not secrets.compare_digest(expected.encode(), got.encode()):
+                return None
+            return m.machine_id  # канонический ID для machine_clients и далее
         finally:
             db.close()
 
-    if not await _db(_auth):
+    canonical_id = await _db(_auth)
+    if canonical_id is None:
         await websocket.close(code=4401)
         return
+    machine_id = canonical_id
 
     await websocket.accept()
     machine_clients[machine_id] = websocket
@@ -742,6 +741,32 @@ def _normalize_token(s: str) -> str:
     визуальный разделитель, не часть секрета, а регистр клавиатура может
     менять сама. Оставляем только буквы/цифры и приводим к верхнему регистру."""
     return re.sub(r"[^A-Za-z0-9]", "", s).upper()
+
+
+def _normalize_machine_id(s: str) -> str:
+    """Как и токен, ID автомата набирают руками на экранной клавиатуре
+    планшета — опечатка в регистре/дефисе (vnd002 вместо VND-002) не должна
+    рвать связь с сервером и ронять точку в 404/403 на ровном месте."""
+    return re.sub(r"[^A-Za-z0-9]", "", s or "").upper()
+
+
+def _find_machine(db: Session, machine_id: str) -> "VendingMachine | None":
+    """Точное совпадение — быстрый путь (частый случай); если не нашли,
+    сверяем без учёта регистра/дефисов (см. _normalize_machine_id) —
+    активных точек мало, полный скан не проблема."""
+    m = db.query(VendingMachine).filter(
+        VendingMachine.machine_id == machine_id,
+        VendingMachine.is_active == True,
+    ).first()
+    if m:
+        return m
+    target = _normalize_machine_id(machine_id)
+    if not target:
+        return None
+    for cand in db.query(VendingMachine).filter(VendingMachine.is_active == True).all():
+        if _normalize_machine_id(cand.machine_id) == target:
+            return cand
+    return None
 
 
 @app.post("/api/admin/machines", dependencies=[Depends(require_operator)])
