@@ -8,6 +8,7 @@
     <string name="settings_serial_port">Serial-порт (VMC)</string>
     <string name="settings_portrait">Планшет установлен вертикально (портретно)</string>
     <string name="settings_reverse">Экран перевёрнут (планшет вставлен в корпус вверх ногами)</string>
+    <string name="settings_lock_task">Блокировка выхода из приложения (для покупателя). На время теста можно выключить</string>
     <string name="settings_save">Сохранить и запустить</string>
     <string name="settings_hint">Эти данные выдаются один раз при регистрации точки в админке (раздел «Точки» → «Добавить точку»). Токен показывается только при создании — сохраните его.</string>
     <string name="err_not_configured">Киоск не настроен.\nДолгое нажатие на значок ⚙ в левом верхнем углу — открыть настройки.</string>

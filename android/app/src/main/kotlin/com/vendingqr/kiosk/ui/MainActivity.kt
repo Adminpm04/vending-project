@@ -245,7 +245,13 @@ class MainActivity : AppCompatActivity() {
                 @Suppress("DEPRECATION")
                 am.isInLockTaskMode
             }
-            if (!alreadyLocked) startLockTask()
+            if (Prefs.isLockTaskEnabled(this)) {
+                if (!alreadyLocked) startLockTask()
+            } else if (alreadyLocked) {
+                // Настройку выключили, пока приложение уже было закреплено —
+                // снимаем закрепление сразу, не дожидаясь перезапуска.
+                stopLockTask()
+            }
         } catch (e: Exception) {
             Log.w(TAG, "screen pinning unavailable: ${e.message}")
         }
