@@ -26,6 +26,9 @@ class VmcLink(private val devicePath: String, private val baudRate: Int) {
     /** Финальные (не in-progress) статусы выдачи — читаются VmcController'ом. */
     val dispenseEvents = LinkedBlockingQueue<VmcProtocol.DispenseStatus>()
 
+    /** Ответы на проверку слота (0x02) — читаются VmcController'ом. */
+    val selectionEvents = LinkedBlockingQueue<VmcProtocol.SelectionState>()
+
     @Volatile
     var synced = false
         private set
@@ -43,6 +46,11 @@ class VmcLink(private val devicePath: String, private val baudRate: Int) {
     @Synchronized
     fun queueDispense(slotId: Int) {
         outbox.addLast(VmcProtocol.buildDriveDirect(nextPackNo(), slotId, dropSensor = true, elevator = false))
+    }
+
+    @Synchronized
+    fun queueCheckSelection(slotId: Int) {
+        outbox.addLast(VmcProtocol.buildCheckSelection(nextPackNo(), slotId))
     }
 
     @Synchronized
@@ -149,6 +157,11 @@ class VmcLink(private val devicePath: String, private val baudRate: Int) {
                 if (status.kind != VmcProtocol.DispenseStatus.Kind.IN_PROGRESS) {
                     dispenseEvents.offer(status)
                 }
+            }
+            VmcProtocol.CMD_SELECTION_STATE -> {
+                val state = VmcProtocol.parseSelectionState(packet.text)
+                Log.i(TAG, "Selection state: $state")
+                selectionEvents.offer(state)
             }
             VmcProtocol.CMD_SLOT_INFO -> {
                 // Цены/остатки ведёт сервер — информация VMC не используется.

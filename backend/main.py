@@ -14,6 +14,7 @@ import json
 import os
 import re
 import secrets
+import uuid
 
 from database import (
     get_db, init_db, SessionLocal,
@@ -33,6 +34,9 @@ machine_clients: dict[str, WebSocket] = {}
 kiosk_clients: dict[str, list[WebSocket]] = {}
 # session_id -> Future с результатом выдачи от контроллера
 _dispense_waiters: dict[int, asyncio.Future] = {}
+# request_id -> Future с результатом проверки слота датчиком (до оплаты)
+_slot_check_waiters: dict[str, asyncio.Future] = {}
+SLOT_CHECK_TIMEOUT = 4  # секунд — не держим клиента перед QR дольше этого
 
 
 async def _db(fn):
@@ -124,6 +128,37 @@ async def kiosk_products(machine_id: str, db: Session = Depends(get_db)):
     }
 
 
+async def check_slot_stock(machine_id: str, slot_id: int) -> dict:
+    """Спросить контроллер о реальном состоянии слота (датчик VMC, команда 0x01),
+    прежде чем показать клиенту QR — ловит случай, когда остаток в базе устарел
+    (забыли обновить в админке), а физически товар уже кончился.
+    Fail-open: если контроллер не ответил вовремя (в т.ч. старая версия APK без
+    поддержки этой проверки) — не блокируем покупку, полагаемся на stock_qty,
+    как раньше."""
+    ws = machine_clients.get(machine_id)
+    if ws is None:
+        return {"checked": False}
+
+    request_id = str(uuid.uuid4())
+    future: asyncio.Future = asyncio.get_event_loop().create_future()
+    _slot_check_waiters[request_id] = future
+    try:
+        await ws.send_text(json.dumps({
+            "type": "check_slot",
+            "request_id": request_id,
+            "slot_id": slot_id,
+        }))
+        result = await asyncio.wait_for(future, timeout=SLOT_CHECK_TIMEOUT)
+    except Exception:
+        return {"checked": False}
+    finally:
+        _slot_check_waiters.pop(request_id, None)
+
+    if not result.get("checked", True):
+        return {"checked": False}
+    return {"checked": True, "ok": bool(result.get("ok")), "message": result.get("message")}
+
+
 @app.post("/api/kiosk/{machine_id}/buy")
 async def kiosk_buy(machine_id: str, data: dict, db: Session = Depends(get_db)):
     """Клиент выбрал товар: создаём сессию + инвойс, возвращаем QR."""
@@ -149,6 +184,12 @@ async def kiosk_buy(machine_id: str, data: dict, db: Session = Depends(get_db)):
     if not slot:
         raise HTTPException(404, "slot not found")
     if slot.stock_qty <= 0:
+        raise HTTPException(409, "out of stock")
+
+    check = await check_slot_stock(machine_id, slot_id)
+    if check.get("checked") and not check.get("ok"):
+        slot.stock_qty = 0
+        db.commit()
         raise HTTPException(409, "out of stock")
 
     session = VendingSession(
@@ -471,6 +512,10 @@ async def machine_ws(websocket: WebSocket, machine_id: str):
                 continue
             if msg.get("type") == "dispense_result":
                 waiter = _dispense_waiters.get(msg.get("session_id"))
+                if waiter and not waiter.done():
+                    waiter.set_result(msg)
+            elif msg.get("type") == "slot_state":
+                waiter = _slot_check_waiters.get(msg.get("request_id"))
                 if waiter and not waiter.done():
                     waiter.set_result(msg)
             # type=="pong"/прочее — игнорируем

@@ -63,6 +63,7 @@ class VMCLink:
         self._pending_ack: bytes | None = None
         self._retries = 0
         self.dispense_events: asyncio.Queue = asyncio.Queue()
+        self.selection_events: asyncio.Queue = asyncio.Queue()
         self.synced = False
 
     def _next_pack_no(self) -> int:
@@ -77,6 +78,12 @@ class VMCLink:
         self._outbox.append(
             vmc.build_drive_direct(self._next_pack_no(), slot_id,
                                    drop_sensor=True, elevator=False))
+
+    def queue_check_selection(self, slot_id: int):
+        # Команда 0x01 — спросить у VMC настоящий статус слота (датчик), не
+        # трогая выдачу. Используется перед показом QR, чтобы не продавать
+        # то, чего физически уже нет, даже если остаток в базе не обновили.
+        self._outbox.append(vmc.build_check_selection(self._next_pack_no(), slot_id))
 
     def queue_sync(self):
         self._outbox.append(vmc.build_sync(self._next_pack_no()))
@@ -132,6 +139,11 @@ class VMCLink:
             if status["kind"] != "in_progress":
                 asyncio.run_coroutine_threadsafe(
                     self.dispense_events.put(status), self._loop)
+        elif command == vmc.CMD_SELECTION_STATE:
+            state = vmc.parse_selection_state(text)
+            log.info(f"Selection state: {state}")
+            asyncio.run_coroutine_threadsafe(
+                self.selection_events.put(state), self._loop)
         elif command == vmc.CMD_SLOT_INFO:
             pass  # цены/остатки ведёт сервер — информация VMC не используется
         else:
@@ -157,6 +169,9 @@ async def ws_loop(link: VMCLink):
                     elif msg.get("type") == "dispense":
                         asyncio.create_task(
                             handle_dispense(link, ws, msg["session_id"], msg["slot_id"]))
+                    elif msg.get("type") == "check_slot":
+                        asyncio.create_task(
+                            handle_check_slot(link, ws, msg["request_id"], msg["slot_id"]))
         except Exception as e:
             log.warning(f"WS disconnected: {e}; retry in {backoff}s")
             await asyncio.sleep(backoff)
@@ -186,6 +201,36 @@ async def handle_dispense(link: VMCLink, ws, session_id: int, slot_id: int):
         "message": status.get("message"),
     }
     log.info(f"Dispense result: {result}")
+    await ws.send(json.dumps(result))
+
+
+async def handle_check_slot(link: VMCLink, ws, request_id: str, slot_id: int):
+    """Запрос сервера "есть ли реально товар в слоте?" → RS232 → ответ обратно."""
+    log.info(f"Check-slot request: request_id={request_id} slot={slot_id}")
+
+    while not link.selection_events.empty():
+        link.selection_events.get_nowait()
+
+    link.queue_check_selection(slot_id)
+
+    try:
+        state = await asyncio.wait_for(link.selection_events.get(), timeout=3)
+        result = {
+            "type": "slot_state",
+            "request_id": request_id,
+            "checked": True,
+            "ok": state["ok"],
+            "message": state.get("message"),
+        }
+    except asyncio.TimeoutError:
+        result = {
+            "type": "slot_state",
+            "request_id": request_id,
+            "checked": False,
+            "ok": True,
+            "message": "VMC response timeout",
+        }
+    log.info(f"Slot state: {result}")
     await ws.send(json.dumps(result))
 
 

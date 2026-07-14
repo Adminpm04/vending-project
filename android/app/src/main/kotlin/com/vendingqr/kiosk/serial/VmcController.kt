@@ -62,10 +62,17 @@ class VmcController(
     }
 
     private fun handleServerMessage(msg: JSONObject) {
-        if (msg.optString("type") == "dispense") {
-            val sessionId = msg.optInt("session_id")
-            val slotId = msg.optInt("slot_id")
-            executor.submit { handleDispense(sessionId, slotId) }
+        when (msg.optString("type")) {
+            "dispense" -> {
+                val sessionId = msg.optInt("session_id")
+                val slotId = msg.optInt("slot_id")
+                executor.submit { handleDispense(sessionId, slotId) }
+            }
+            "check_slot" -> {
+                val requestId = msg.optString("request_id")
+                val slotId = msg.optInt("slot_id")
+                executor.submit { handleCheckSlot(requestId, slotId) }
+            }
         }
     }
 
@@ -93,6 +100,43 @@ class VmcController(
         } else {
             sendResult(sessionId, success = false, code = null, message = "VMC response timeout")
         }
+    }
+
+    private fun handleCheckSlot(requestId: String, slotId: Int) {
+        Log.i(TAG, "check-slot request: request_id=$requestId slot=$slotId")
+
+        link.selectionEvents.clear()
+
+        if (!link.isRunning) {
+            sendSlotState(requestId, checked = false, ok = true, message = "Serial port not open")
+            return
+        }
+
+        link.queueCheckSelection(slotId)
+
+        val state = try {
+            link.selectionEvents.poll(3, TimeUnit.SECONDS)
+        } catch (e: InterruptedException) {
+            null
+        }
+
+        if (state != null) {
+            sendSlotState(requestId, checked = true, ok = state.ok, message = state.message)
+        } else {
+            sendSlotState(requestId, checked = false, ok = true, message = "VMC response timeout")
+        }
+    }
+
+    private fun sendSlotState(requestId: String, checked: Boolean, ok: Boolean, message: String) {
+        val result = JSONObject().apply {
+            put("type", "slot_state")
+            put("request_id", requestId)
+            put("checked", checked)
+            put("ok", ok)
+            put("message", message)
+        }
+        Log.i(TAG, "slot state: $result")
+        ws.send(result)
     }
 
     private fun sendResult(sessionId: Int, success: Boolean, code: Int?, message: String) {
