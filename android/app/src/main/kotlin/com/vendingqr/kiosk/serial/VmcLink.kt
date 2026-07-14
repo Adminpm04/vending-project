@@ -29,6 +29,9 @@ class VmcLink(private val devicePath: String, private val baudRate: Int) {
     /** Ответы на проверку слота (0x02) — читаются VmcController'ом. */
     val selectionEvents = LinkedBlockingQueue<VmcProtocol.SelectionState>()
 
+    /** Ответы на запрос статуса лифта/дверцы (0x54) — читаются VmcController'ом. */
+    val elevatorEvents = LinkedBlockingQueue<VmcProtocol.ElevatorStatus>()
+
     @Volatile
     var synced = false
         private set
@@ -51,6 +54,11 @@ class VmcLink(private val devicePath: String, private val baudRate: Int) {
     @Synchronized
     fun queueCheckSelection(slotId: Int) {
         outbox.addLast(VmcProtocol.buildCheckSelection(nextPackNo(), slotId))
+    }
+
+    @Synchronized
+    fun queueElevatorStatus() {
+        outbox.addLast(VmcProtocol.buildElevatorStatusReq(nextPackNo()))
     }
 
     @Synchronized
@@ -162,6 +170,11 @@ class VmcLink(private val devicePath: String, private val baudRate: Int) {
                 val state = VmcProtocol.parseSelectionState(packet.text)
                 Log.i(TAG, "Selection state: $state")
                 selectionEvents.offer(state)
+            }
+            VmcProtocol.CMD_ELEVATOR_STATUS -> {
+                val status = VmcProtocol.parseElevatorStatus(packet.text)
+                Log.i(TAG, "Elevator status: $status")
+                elevatorEvents.offer(status)
             }
             VmcProtocol.CMD_SLOT_INFO -> {
                 // Цены/остатки ведёт сервер — информация VMC не используется.

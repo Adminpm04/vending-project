@@ -37,6 +37,8 @@ _dispense_waiters: dict[int, asyncio.Future] = {}
 # request_id -> Future с результатом проверки слота датчиком (до оплаты)
 _slot_check_waiters: dict[str, asyncio.Future] = {}
 SLOT_CHECK_TIMEOUT = 4  # секунд — не держим клиента перед QR дольше этого
+# request_id -> Future с результатом проверки лифта/дверцы (диагностика оператора)
+_elevator_check_waiters: dict[str, asyncio.Future] = {}
 
 
 async def _db(fn):
@@ -154,6 +156,30 @@ async def check_slot_stock(machine_id: str, slot_id: int) -> dict:
         return {"checked": False}
     finally:
         _slot_check_waiters.pop(request_id, None)
+
+    if not result.get("checked", True):
+        return {"checked": False}
+    return {"checked": True, "ok": bool(result.get("ok")), "message": result.get("message")}
+
+
+async def check_elevator_status(machine_id: str) -> dict:
+    """Спросить контроллер о статусе лифта/дверцы выдачи (команда 0x53) —
+    общий для всей машины, не по слоту. Диагностика для оператора: застрял
+    ли товар в лифте / не закрыта ли дверца выдачи, без вскрытия автомата."""
+    ws = machine_clients.get(machine_id)
+    if ws is None:
+        return {"checked": False}
+
+    request_id = str(uuid.uuid4())
+    future: asyncio.Future = asyncio.get_event_loop().create_future()
+    _elevator_check_waiters[request_id] = future
+    try:
+        await ws.send_text(json.dumps({"type": "check_elevator", "request_id": request_id}))
+        result = await asyncio.wait_for(future, timeout=SLOT_CHECK_TIMEOUT)
+    except Exception:
+        return {"checked": False}
+    finally:
+        _elevator_check_waiters.pop(request_id, None)
 
     if not result.get("checked", True):
         return {"checked": False}
@@ -525,6 +551,10 @@ async def machine_ws(websocket: WebSocket, machine_id: str):
                     waiter.set_result(msg)
             elif msg.get("type") == "slot_state":
                 waiter = _slot_check_waiters.get(msg.get("request_id"))
+                if waiter and not waiter.done():
+                    waiter.set_result(msg)
+            elif msg.get("type") == "elevator_state":
+                waiter = _elevator_check_waiters.get(msg.get("request_id"))
                 if waiter and not waiter.done():
                     waiter.set_result(msg)
             # type=="pong"/прочее — игнорируем
@@ -1124,6 +1154,16 @@ async def force_dispense(machine_id: str, data: dict, user: AdminUser = Depends(
     session_id = await _db(_create)
     result = await dispense(session_id, machine_id, slot_id)
     return {"success": result["ok"], "message": result["message"], "session_id": session_id}
+
+
+@app.post("/api/admin/machines/{machine_id}/check-elevator", dependencies=[Depends(require_operator)])
+async def admin_check_elevator(machine_id: str):
+    """Диагностика: спросить у автомата статус лифта/дверцы выдачи прямо
+    сейчас, без покупки — помогает понять причину постоянных сбоев выдачи
+    (застрявший товар, открытая дверца) не вскрывая автомат."""
+    if machine_id not in machine_clients:
+        raise HTTPException(503, "machine offline")
+    return await check_elevator_status(machine_id)
 
 
 @app.get("/api/admin/blacklist", dependencies=[Depends(require_admin)])

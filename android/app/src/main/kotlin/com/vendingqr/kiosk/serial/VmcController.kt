@@ -73,6 +73,10 @@ class VmcController(
                 val slotId = msg.optInt("slot_id")
                 executor.submit { handleCheckSlot(requestId, slotId) }
             }
+            "check_elevator" -> {
+                val requestId = msg.optString("request_id")
+                executor.submit { handleCheckElevator(requestId) }
+            }
         }
     }
 
@@ -89,10 +93,27 @@ class VmcController(
 
         link.queueDispense(slotId)
 
-        val status = try {
-            link.dispenseEvents.poll(45, TimeUnit.SECONDS)
-        } catch (e: InterruptedException) {
-            null
+        // Статус (0x04) несёт свой selection number — если предыдущий запрос
+        // задержался (напр. механизм долго возился) и его финальный статус
+        // пришёл только сейчас, после того как мы уже отправили команду для
+        // ДРУГОГО слота, poll() без проверки принял бы чужой ответ за наш.
+        // Отбрасываем несовпадающие по слоту события и ждём дальше — до
+        // общего дедлайна, а не по одному poll() с полным таймаутом.
+        val deadline = System.currentTimeMillis() + 45_000
+        var status: VmcProtocol.DispenseStatus? = null
+        while (System.currentTimeMillis() < deadline) {
+            val remaining = deadline - System.currentTimeMillis()
+            val ev = try {
+                link.dispenseEvents.poll(remaining, TimeUnit.MILLISECONDS)
+            } catch (e: InterruptedException) {
+                null
+            } ?: break
+            if (ev.slot != null && ev.slot != slotId) {
+                Log.w(TAG, "dispense status for slot ${ev.slot}, expected $slotId (session=$sessionId) — stale, ignoring")
+                continue
+            }
+            status = ev
+            break
         }
 
         if (status != null) {
@@ -114,10 +135,21 @@ class VmcController(
 
         link.queueCheckSelection(slotId)
 
-        val state = try {
-            link.selectionEvents.poll(3, TimeUnit.SECONDS)
-        } catch (e: InterruptedException) {
-            null
+        val deadline = System.currentTimeMillis() + 3_000
+        var state: VmcProtocol.SelectionState? = null
+        while (System.currentTimeMillis() < deadline) {
+            val remaining = deadline - System.currentTimeMillis()
+            val ev = try {
+                link.selectionEvents.poll(remaining, TimeUnit.MILLISECONDS)
+            } catch (e: InterruptedException) {
+                null
+            } ?: break
+            if (ev.slot != null && ev.slot != slotId) {
+                Log.w(TAG, "selection state for slot ${ev.slot}, expected $slotId (request=$requestId) — stale, ignoring")
+                continue
+            }
+            state = ev
+            break
         }
 
         if (state != null) {
@@ -125,6 +157,43 @@ class VmcController(
         } else {
             sendSlotState(requestId, checked = false, ok = true, message = "VMC response timeout")
         }
+    }
+
+    private fun handleCheckElevator(requestId: String) {
+        Log.i(TAG, "check-elevator request: request_id=$requestId")
+
+        link.elevatorEvents.clear()
+
+        if (!link.isRunning) {
+            sendElevatorState(requestId, checked = false, ok = true, message = "Serial port not open")
+            return
+        }
+
+        link.queueElevatorStatus()
+
+        val status = try {
+            link.elevatorEvents.poll(3, TimeUnit.SECONDS)
+        } catch (e: InterruptedException) {
+            null
+        }
+
+        if (status != null) {
+            sendElevatorState(requestId, checked = true, ok = status.ok, message = status.message)
+        } else {
+            sendElevatorState(requestId, checked = false, ok = true, message = "VMC response timeout")
+        }
+    }
+
+    private fun sendElevatorState(requestId: String, checked: Boolean, ok: Boolean, message: String) {
+        val result = JSONObject().apply {
+            put("type", "elevator_state")
+            put("request_id", requestId)
+            put("checked", checked)
+            put("ok", ok)
+            put("message", message)
+        }
+        Log.i(TAG, "elevator state: $result")
+        ws.send(result)
     }
 
     private fun sendSlotState(requestId: String, checked: Boolean, ok: Boolean, message: String) {

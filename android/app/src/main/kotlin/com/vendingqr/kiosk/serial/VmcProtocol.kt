@@ -27,6 +27,8 @@ object VmcProtocol {
     const val CMD_ACK = 0x42
     const val CMD_MACHINE_STATUS_REQ = 0x51
     const val CMD_MACHINE_STATUS = 0x52
+    const val CMD_ELEVATOR_STATUS_REQ = 0x53
+    const val CMD_ELEVATOR_STATUS = 0x54
 
     val POLL_PACKET = byteArrayOf(0xFA.toByte(), 0xFB.toByte(), 0x41, 0x00, 0x40)
     val ACK_PACKET = byteArrayOf(0xFA.toByte(), 0xFB.toByte(), 0x42, 0x00, 0x43)
@@ -69,6 +71,16 @@ object VmcProtocol {
         0x17 to "Main motor fault",
         0x18 to "Translation motor fault",
         0x19 to "Staypole push error",
+    )
+
+    // Статусы лифта/дверцы выдачи (Text[0] пакета 0x54) — общие для всей
+    // машины, не завязаны на конкретный слот. Диагностика застрявшего товара.
+    private val ELEVATOR_STATES = mapOf(
+        0x00 to "Normal",
+        0x01 to "Product stuck in elevator",
+        0x02 to "Delivery door not closed",
+        0x03 to "Elevator error",
+        0x04 to "Elevator self-checking error",
     )
 
     fun xorChecksum(data: ByteArray, offset: Int = 0, length: Int = data.size): Int {
@@ -114,6 +126,16 @@ object VmcProtocol {
 
     /** 0x31 — синхронизация. Обязательна при старте Upper computer. */
     fun buildSync(packNo: Int): ByteArray = buildPacket(CMD_SYNC, packNo)
+
+    /** 0x53 — запросить статус лифта/дверцы выдачи (общий, не по слоту). */
+    fun buildElevatorStatusReq(packNo: Int): ByteArray = buildPacket(CMD_ELEVATOR_STATUS_REQ, packNo)
+
+    data class ElevatorStatus(val ok: Boolean, val code: Int, val message: String)
+
+    fun parseElevatorStatus(text: ByteArray): ElevatorStatus {
+        val code = text[0].toInt() and 0xFF
+        return ElevatorStatus(code == 0x00, code, ELEVATOR_STATES[code] ?: "status 0x%02X".format(code))
+    }
 
     data class DispenseStatus(val kind: Kind, val code: Int, val slot: Int?, val message: String) {
         enum class Kind { IN_PROGRESS, SUCCESS, ERROR }

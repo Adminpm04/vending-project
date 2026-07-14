@@ -64,6 +64,7 @@ class VMCLink:
         self._retries = 0
         self.dispense_events: asyncio.Queue = asyncio.Queue()
         self.selection_events: asyncio.Queue = asyncio.Queue()
+        self.elevator_events: asyncio.Queue = asyncio.Queue()
         self.synced = False
 
     def _next_pack_no(self) -> int:
@@ -84,6 +85,12 @@ class VMCLink:
         # трогая выдачу. Используется перед показом QR, чтобы не продавать
         # то, чего физически уже нет, даже если остаток в базе не обновили.
         self._outbox.append(vmc.build_check_selection(self._next_pack_no(), slot_id))
+
+    def queue_elevator_status(self):
+        # Команда 0x53 — статус лифта/дверцы выдачи, общий для всей машины
+        # (не по слоту). Диагностика застрявшего товара без физического
+        # вскрытия автомата.
+        self._outbox.append(vmc.build_elevator_status_req(self._next_pack_no()))
 
     def queue_sync(self):
         self._outbox.append(vmc.build_sync(self._next_pack_no()))
@@ -144,6 +151,11 @@ class VMCLink:
             log.info(f"Selection state: {state}")
             asyncio.run_coroutine_threadsafe(
                 self.selection_events.put(state), self._loop)
+        elif command == vmc.CMD_ELEVATOR_STATUS:
+            status = vmc.parse_elevator_status(text)
+            log.info(f"Elevator status: {status}")
+            asyncio.run_coroutine_threadsafe(
+                self.elevator_events.put(status), self._loop)
         elif command == vmc.CMD_SLOT_INFO:
             pass  # цены/остатки ведёт сервер — информация VMC не используется
         else:
@@ -172,6 +184,9 @@ async def ws_loop(link: VMCLink):
                     elif msg.get("type") == "check_slot":
                         asyncio.create_task(
                             handle_check_slot(link, ws, msg["request_id"], msg["slot_id"]))
+                    elif msg.get("type") == "check_elevator":
+                        asyncio.create_task(
+                            handle_check_elevator(link, ws, msg["request_id"]))
         except Exception as e:
             log.warning(f"WS disconnected: {e}; retry in {backoff}s")
             await asyncio.sleep(backoff)
@@ -188,10 +203,28 @@ async def handle_dispense(link: VMCLink, ws, session_id: int, slot_id: int):
 
     link.queue_dispense(slot_id)
 
-    try:
-        status = await asyncio.wait_for(link.dispense_events.get(), timeout=45)
-    except asyncio.TimeoutError:
-        status = {"kind": "error", "code": None, "message": "VMC response timeout"}
+    # Статус (0x04) несёт свой selection number — если предыдущий запрос
+    # задержался и его финальный статус пришёл только сейчас, после того как
+    # мы уже отправили команду для ДРУГОГО слота, наивный get() принял бы
+    # чужой ответ за наш. Отбрасываем несовпадающие по слоту события и ждём
+    # дальше — до общего дедлайна, а не одним ожиданием с полным таймаутом.
+    deadline = asyncio.get_event_loop().time() + 45
+    status = None
+    while True:
+        remaining = deadline - asyncio.get_event_loop().time()
+        if remaining <= 0:
+            status = {"kind": "error", "code": None, "message": "VMC response timeout"}
+            break
+        try:
+            ev = await asyncio.wait_for(link.dispense_events.get(), timeout=remaining)
+        except asyncio.TimeoutError:
+            status = {"kind": "error", "code": None, "message": "VMC response timeout"}
+            break
+        if ev.get("slot") is not None and ev["slot"] != slot_id:
+            log.warning(f"Dispense status for slot {ev['slot']}, expected {slot_id} (session={session_id}) — stale, ignoring")
+            continue
+        status = ev
+        break
 
     result = {
         "type": "dispense_result",
@@ -213,24 +246,56 @@ async def handle_check_slot(link: VMCLink, ws, request_id: str, slot_id: int):
 
     link.queue_check_selection(slot_id)
 
-    try:
-        state = await asyncio.wait_for(link.selection_events.get(), timeout=3)
+    deadline = asyncio.get_event_loop().time() + 3
+    while True:
+        remaining = deadline - asyncio.get_event_loop().time()
+        if remaining <= 0:
+            result = {
+                "type": "slot_state", "request_id": request_id,
+                "checked": False, "ok": True, "message": "VMC response timeout",
+            }
+            break
+        try:
+            state = await asyncio.wait_for(link.selection_events.get(), timeout=remaining)
+        except asyncio.TimeoutError:
+            result = {
+                "type": "slot_state", "request_id": request_id,
+                "checked": False, "ok": True, "message": "VMC response timeout",
+            }
+            break
+        if state.get("slot") is not None and state["slot"] != slot_id:
+            log.warning(f"Selection state for slot {state['slot']}, expected {slot_id} (request={request_id}) — stale, ignoring")
+            continue
         result = {
-            "type": "slot_state",
-            "request_id": request_id,
-            "checked": True,
-            "ok": state["ok"],
-            "message": state.get("message"),
+            "type": "slot_state", "request_id": request_id,
+            "checked": True, "ok": state["ok"], "message": state.get("message"),
+        }
+        break
+    log.info(f"Slot state: {result}")
+    await ws.send(json.dumps(result))
+
+
+async def handle_check_elevator(link: VMCLink, ws, request_id: str):
+    """Запрос сервера "статус лифта/дверцы" → RS232 → ответ обратно."""
+    log.info(f"Check-elevator request: request_id={request_id}")
+
+    while not link.elevator_events.empty():
+        link.elevator_events.get_nowait()
+
+    link.queue_elevator_status()
+
+    try:
+        status = await asyncio.wait_for(link.elevator_events.get(), timeout=3)
+        result = {
+            "type": "elevator_state", "request_id": request_id,
+            "checked": True, "ok": status["ok"], "message": status.get("message"),
         }
     except asyncio.TimeoutError:
         result = {
-            "type": "slot_state",
-            "request_id": request_id,
-            "checked": False,
-            "ok": True,
-            "message": "VMC response timeout",
+            "type": "elevator_state", "request_id": request_id,
+            "checked": False, "ok": True, "message": "VMC response timeout",
         }
-    log.info(f"Slot state: {result}")
+    log.info(f"Elevator state: {result}")
     await ws.send(json.dumps(result))
 
 
