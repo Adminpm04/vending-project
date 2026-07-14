@@ -81,6 +81,10 @@ class VmcController(
                 val requestId = msg.optString("request_id")
                 executor.submit { handleCancelSelection(requestId) }
             }
+            "query_selection_number" -> {
+                val requestId = msg.optString("request_id")
+                executor.submit { handleQuerySelectionNumber(requestId) }
+            }
         }
     }
 
@@ -209,6 +213,43 @@ class VmcController(
         link.queueCancelSelection()
         result.put("sent", true).put("message", "Command queued")
         Log.i(TAG, "cancel selection: $result")
+        ws.send(result)
+    }
+
+    private fun handleQuerySelectionNumber(requestId: String) {
+        Log.i(TAG, "query-selection-number request: request_id=$requestId")
+
+        link.menuEvents.clear()
+
+        val result = JSONObject().apply {
+            put("type", "menu_response")
+            put("request_id", requestId)
+        }
+
+        if (!link.isRunning) {
+            result.put("checked", false).put("message", "Serial port not open")
+            Log.i(TAG, "menu response: $result")
+            ws.send(result)
+            return
+        }
+
+        link.queueQuerySelectionNumber()
+
+        val resp = try {
+            link.menuEvents.poll(3, TimeUnit.SECONDS)
+        } catch (e: InterruptedException) {
+            null
+        }
+
+        if (resp != null) {
+            result.put("checked", true)
+                .put("command_type", resp.commandType ?: JSONObject.NULL)
+                .put("operation_type", resp.operationType ?: JSONObject.NULL)
+                .put("raw_hex", resp.rawHex)
+        } else {
+            result.put("checked", false).put("message", "VMC response timeout")
+        }
+        Log.i(TAG, "menu response: $result")
         ws.send(result)
     }
 

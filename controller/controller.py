@@ -65,6 +65,7 @@ class VMCLink:
         self.dispense_events: asyncio.Queue = asyncio.Queue()
         self.selection_events: asyncio.Queue = asyncio.Queue()
         self.elevator_events: asyncio.Queue = asyncio.Queue()
+        self.menu_events: asyncio.Queue = asyncio.Queue()
         self.synced = False
 
     def _next_pack_no(self) -> int:
@@ -96,6 +97,10 @@ class VMCLink:
         # Команда 0x05 с selection=0x0000 — «отменить выбор». Сброс зависшего
         # внутреннего состояния VMC после серии сбоев подряд.
         self._outbox.append(vmc.build_cancel_selection(self._next_pack_no()))
+
+    def queue_query_selection_number(self):
+        # Меню-команда 0x70 (тип 0x41) — какие номера слотов реально знает VMC.
+        self._outbox.append(vmc.build_query_selection_number(self._next_pack_no()))
 
     def queue_sync(self):
         self._outbox.append(vmc.build_sync(self._next_pack_no()))
@@ -161,6 +166,11 @@ class VMCLink:
             log.info(f"Elevator status: {status}")
             asyncio.run_coroutine_threadsafe(
                 self.elevator_events.put(status), self._loop)
+        elif command == vmc.CMD_MENU_RESP:
+            resp = vmc.parse_menu_response(text)
+            log.info(f"Menu response: {resp}")
+            asyncio.run_coroutine_threadsafe(
+                self.menu_events.put(resp), self._loop)
         elif command == vmc.CMD_SLOT_INFO:
             pass  # цены/остатки ведёт сервер — информация VMC не используется
         else:
@@ -195,6 +205,9 @@ async def ws_loop(link: VMCLink):
                     elif msg.get("type") == "cancel_selection":
                         asyncio.create_task(
                             handle_cancel_selection(link, ws, msg["request_id"]))
+                    elif msg.get("type") == "query_selection_number":
+                        asyncio.create_task(
+                            handle_query_selection_number(link, ws, msg["request_id"]))
         except Exception as e:
             log.warning(f"WS disconnected: {e}; retry in {backoff}s")
             await asyncio.sleep(backoff)
@@ -319,6 +332,29 @@ async def handle_cancel_selection(link: VMCLink, ws, request_id: str):
         result = {"type": "cancel_selection_result", "request_id": request_id,
                   "sent": True, "message": "Command queued"}
     log.info(f"Cancel selection: {result}")
+    await ws.send(json.dumps(result))
+
+
+async def handle_query_selection_number(link: VMCLink, ws, request_id: str):
+    """Меню-запрос 0x70/0x41 — какие номера слотов реально знает VMC."""
+    log.info(f"Query-selection-number request: request_id={request_id}")
+
+    while not link.menu_events.empty():
+        link.menu_events.get_nowait()
+
+    link.queue_query_selection_number()
+
+    try:
+        resp = await asyncio.wait_for(link.menu_events.get(), timeout=3)
+        result = {
+            "type": "menu_response", "request_id": request_id, "checked": True,
+            "command_type": resp.get("command_type"), "operation_type": resp.get("operation_type"),
+            "raw_hex": resp.get("raw_hex"),
+        }
+    except asyncio.TimeoutError:
+        result = {"type": "menu_response", "request_id": request_id,
+                  "checked": False, "message": "VMC response timeout"}
+    log.info(f"Menu response: {result}")
     await ws.send(json.dumps(result))
 
 

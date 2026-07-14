@@ -29,6 +29,9 @@ object VmcProtocol {
     const val CMD_MACHINE_STATUS = 0x52
     const val CMD_ELEVATOR_STATUS_REQ = 0x53
     const val CMD_ELEVATOR_STATUS = 0x54
+    const val CMD_MENU_REQ = 0x70
+    const val CMD_MENU_RESP = 0x71
+    const val MENU_QUERY_SELECTION_NUMBER = 0x41
 
     val POLL_PACKET = byteArrayOf(0xFA.toByte(), 0xFB.toByte(), 0x41, 0x00, 0x40)
     val ACK_PACKET = byteArrayOf(0xFA.toByte(), 0xFB.toByte(), 0x42, 0x00, 0x43)
@@ -140,6 +143,21 @@ object VmcProtocol {
     fun parseElevatorStatus(text: ByteArray): ElevatorStatus {
         val code = text[0].toInt() and 0xFF
         return ElevatorStatus(code == 0x00, code, ELEVATOR_STATES[code] ?: "status 0x%02X".format(code))
+    }
+
+    /** 0x70 с command type 0x41 — «какие номера слотов реально знает VMC». */
+    fun buildQuerySelectionNumber(packNo: Int): ByteArray =
+        buildPacket(CMD_MENU_REQ, packNo, byteArrayOf(MENU_QUERY_SELECTION_NUMBER.toByte(), 0x00))
+
+    data class MenuResponse(val commandType: Int?, val operationType: Int?, val rawHex: String)
+
+    /** Разобрать Text пакета 0x71 — формат тела зависит от command type и не
+     * всегда чётко задокументирован, отдаём остаток как raw hex для ручного разбора. */
+    fun parseMenuResponse(text: ByteArray): MenuResponse {
+        val commandType = if (text.isNotEmpty()) text[0].toInt() and 0xFF else null
+        val operationType = if (text.size >= 2) text[1].toInt() and 0xFF else null
+        val rawHex = if (text.size > 2) text.copyOfRange(2, text.size).joinToString("") { "%02X".format(it.toInt() and 0xFF) } else ""
+        return MenuResponse(commandType, operationType, rawHex)
     }
 
     data class DispenseStatus(val kind: Kind, val code: Int, val slot: Int?, val message: String) {

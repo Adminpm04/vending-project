@@ -41,6 +41,8 @@ SLOT_CHECK_TIMEOUT = 4  # секунд — не держим клиента пе
 _elevator_check_waiters: dict[str, asyncio.Future] = {}
 # request_id -> Future с подтверждением отправки «отмены выбора» (диагностика)
 _cancel_selection_waiters: dict[str, asyncio.Future] = {}
+# request_id -> Future с ответом на меню-команду (диагностика: реальные номера слотов у VMC)
+_menu_waiters: dict[str, asyncio.Future] = {}
 
 
 async def _db(fn):
@@ -207,6 +209,35 @@ async def send_cancel_selection(machine_id: str) -> dict:
         _cancel_selection_waiters.pop(request_id, None)
 
     return {"sent": bool(result.get("sent")), "message": result.get("message")}
+
+
+async def query_selection_number(machine_id: str) -> dict:
+    """Меню-команда 0x70 (тип 0x41) — «какие номера слотов реально знает VMC».
+    Формат ответа в документации описан нечётко — отдаём как есть (raw hex),
+    разбираем вручную по факту, не переделывая протокол заранее вслепую."""
+    ws = machine_clients.get(machine_id)
+    if ws is None:
+        return {"checked": False}
+
+    request_id = str(uuid.uuid4())
+    future: asyncio.Future = asyncio.get_event_loop().create_future()
+    _menu_waiters[request_id] = future
+    try:
+        await ws.send_text(json.dumps({"type": "query_selection_number", "request_id": request_id}))
+        result = await asyncio.wait_for(future, timeout=SLOT_CHECK_TIMEOUT)
+    except Exception:
+        return {"checked": False}
+    finally:
+        _menu_waiters.pop(request_id, None)
+
+    if not result.get("checked", True):
+        return {"checked": False}
+    return {
+        "checked": True,
+        "command_type": result.get("command_type"),
+        "operation_type": result.get("operation_type"),
+        "raw_hex": result.get("raw_hex"),
+    }
 
 
 @app.post("/api/kiosk/{machine_id}/buy")
@@ -583,6 +614,10 @@ async def machine_ws(websocket: WebSocket, machine_id: str):
                     waiter.set_result(msg)
             elif msg.get("type") == "cancel_selection_result":
                 waiter = _cancel_selection_waiters.get(msg.get("request_id"))
+                if waiter and not waiter.done():
+                    waiter.set_result(msg)
+            elif msg.get("type") == "menu_response":
+                waiter = _menu_waiters.get(msg.get("request_id"))
                 if waiter and not waiter.done():
                     waiter.set_result(msg)
             # type=="pong"/прочее — игнорируем
@@ -1240,6 +1275,16 @@ async def admin_cancel_selection(machine_id: str):
     if machine_id not in machine_clients:
         raise HTTPException(503, "machine offline")
     return await send_cancel_selection(machine_id)
+
+
+@app.post("/api/admin/machines/{machine_id}/query-selection-number", dependencies=[Depends(require_operator)])
+async def admin_query_selection_number(machine_id: str):
+    """Диагностика: спросить VMC напрямую, какие номера слотов она знает
+    (меню-команда 0x70/0x41) — проверить, совпадает ли наша нумерация 1..8
+    с тем, что реально настроено на плате."""
+    if machine_id not in machine_clients:
+        raise HTTPException(503, "machine offline")
+    return await query_selection_number(machine_id)
 
 
 @app.get("/api/admin/blacklist", dependencies=[Depends(require_admin)])
