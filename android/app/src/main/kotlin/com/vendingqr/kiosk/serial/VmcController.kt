@@ -107,6 +107,11 @@ class VmcController(
         // ДРУГОГО слота, poll() без проверки принял бы чужой ответ за наш.
         // Отбрасываем несовпадающие по слоту события и ждём дальше — до
         // общего дедлайна, а не по одному poll() с полным таймаутом.
+        // slot=0 — отдельный случай, не "чужой ответ": для трёхзначных
+        // селекций (ряд+позиция, напр. 101) эта прошивка VMC в финальном
+        // статусе выдачи всегда возвращает 0 вместо реального номера
+        // (обнаружено на живом тесте — 0x02/0x24 с slot=0 отбрасывались как
+        // stale, и настоящая успешная выдача репортилась как timeout).
         val deadline = System.currentTimeMillis() + 45_000
         var status: VmcProtocol.DispenseStatus? = null
         while (System.currentTimeMillis() < deadline) {
@@ -116,7 +121,7 @@ class VmcController(
             } catch (e: InterruptedException) {
                 null
             } ?: break
-            if (ev.slot != null && ev.slot != slotId) {
+            if (ev.slot != null && ev.slot != 0 && ev.slot != slotId) {
                 Log.w(TAG, "dispense status for slot ${ev.slot}, expected $slotId (session=$sessionId) — stale, ignoring")
                 continue
             }

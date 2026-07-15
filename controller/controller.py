@@ -229,6 +229,11 @@ async def handle_dispense(link: VMCLink, ws, session_id: int, slot_id: int):
     # мы уже отправили команду для ДРУГОГО слота, наивный get() принял бы
     # чужой ответ за наш. Отбрасываем несовпадающие по слоту события и ждём
     # дальше — до общего дедлайна, а не одним ожиданием с полным таймаутом.
+    # slot=0 — отдельный случай, не "чужой ответ": для трёхзначных селекций
+    # (ряд+позиция, напр. 101) эта прошивка VMC в финальном статусе выдачи
+    # всегда возвращает 0 вместо реального номера (обнаружено на живом
+    # тесте — 0x02/0x24 с slot=0 отбрасывались как stale, и настоящая
+    # успешная выдача репортилась как timeout).
     deadline = asyncio.get_event_loop().time() + 45
     status = None
     while True:
@@ -241,7 +246,7 @@ async def handle_dispense(link: VMCLink, ws, session_id: int, slot_id: int):
         except asyncio.TimeoutError:
             status = {"kind": "error", "code": None, "message": "VMC response timeout"}
             break
-        if ev.get("slot") is not None and ev["slot"] != slot_id:
+        if ev.get("slot") is not None and ev["slot"] != 0 and ev["slot"] != slot_id:
             log.warning(f"Dispense status for slot {ev['slot']}, expected {slot_id} (session={session_id}) — stale, ignoring")
             continue
         status = ev
