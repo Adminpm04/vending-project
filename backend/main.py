@@ -113,23 +113,37 @@ async def kiosk_products(machine_id: str, db: Session = Depends(get_db)):
         ProductSlot.machine_id == machine_id,
         ProductSlot.is_active == True,
     ).order_by(ProductSlot.slot_id).all()
+    # Спирали одного товара (одинаковый product_id/имя) сворачиваем в одну
+    # карточку: остаток = сумма по всем спиралям, доступен = есть хоть в одной.
+    # slot_id карточки — первая (младшая) спираль; при покупке сервер сам
+    # выберет непустую спираль этого товара (см. dispense/_group_candidate_slots).
+    groups: dict = {}
+    order: list = []
+    for s in slots:
+        key = _slot_group_key(s)
+        if key not in groups:
+            groups[key] = {
+                "slot_id": s.slot_id,
+                "name": s.product_name,
+                "price": s.price,
+                "stock": s.stock_qty or 0,
+                "image_url": s.image_url,
+            }
+            order.append(key)
+        else:
+            groups[key]["stock"] += (s.stock_qty or 0)
+    products = []
+    for key in order:
+        g = groups[key]
+        g["available"] = g["stock"] > 0
+        products.append(g)
     return {
         "machine_id": machine_id,
         "name": machine.name,
         "location": machine.location,
         "online": machine_id in machine_clients,
         "support_phone": settings.SUPPORT_PHONE,
-        "products": [
-            {
-                "slot_id": s.slot_id,
-                "name": s.product_name,
-                "price": s.price,
-                "stock": s.stock_qty,
-                "image_url": s.image_url,
-                "available": s.stock_qty > 0,
-            }
-            for s in slots
-        ],
+        "products": products,
     }
 
 
@@ -262,14 +276,27 @@ async def kiosk_buy(machine_id: str, data: dict, db: Session = Depends(get_db)):
     ).first()
     if not slot:
         raise HTTPException(404, "slot not found")
-    if slot.stock_qty <= 0:
+
+    # Остаток считаем по всему товару (все спирали группы), а не только по
+    # запрошенной спирали — покупка не должна блокироваться, если товар есть в
+    # соседней спирали ряда. Реальную непустую спираль выберет dispense().
+    key = _slot_group_key(slot)
+    group_slots = db.query(ProductSlot).filter(
+        ProductSlot.machine_id == machine_id,
+        ProductSlot.is_active == True).all()
+    group_slots = [g for g in group_slots if _slot_group_key(g) == key]
+    if sum((g.stock_qty or 0) for g in group_slots) <= 0:
         raise HTTPException(409, "out of stock")
 
+    # Спросим VMC про запрошенную спираль; если пуста — обнулим её остаток и
+    # перепроверим товар в целом (могут быть непустые соседние спирали).
     check = await check_slot_stock(machine_id, slot_id)
     if check.get("checked") and not check.get("ok"):
         slot.stock_qty = 0
         db.commit()
-        raise HTTPException(409, "out of stock")
+        db.refresh(slot)
+        if sum((g.stock_qty or 0) for g in group_slots) <= 0:
+            raise HTTPException(409, "out of stock")
 
     session = VendingSession(
         machine_id=machine_id,
@@ -428,33 +455,87 @@ async def poll_payment(session_id: int, invoice_id: str):
 
 # ─── DISPENSE FLOW ───────────────────────────────────────────────────────────
 
-async def dispense(session_id: int, machine_id: str, slot_id: int) -> dict:
-    """Отправляет команду выдачи контроллеру, ждёт результат VMC.
-    Возвращает {"ok": bool, "message": str}. Сбой НЕ возвращает деньги
-    автоматически — сессия помечается ошибкой (failed), клиенту на кассе
-    показывается номер поддержки, оператор сам решает через админку: выдать
-    товар удалённо или запустить возврат вручную (retry-refund)."""
-    async def _fail(reason: str) -> dict:
-        await _db(lambda: _mark_session_failed(session_id, reason))
-        await notify_kiosk(machine_id, {"type": "failed", "session_id": session_id})
-        return {"ok": False, "message": reason}
+def _slot_group_key(slot: "ProductSlot"):
+    """Ключ группировки спиралей одного товара: product_id, если задан,
+    иначе имя товара. Спирали с одинаковым ключом = один товар (напр. целый
+    ряд RC Cola на 11 спиралях)."""
+    return slot.product_id if slot.product_id is not None else f"name:{slot.product_name}"
 
+
+def _group_candidate_slots(machine_id: str, slot_id: int) -> list:
+    """Список спиралей того же товара для выдачи: запрошенная первой, затем
+    остальные с остатком по возрастанию slot_id. Нужно, чтобы при пустой/
+    заклинившей спирали автомат сам перешёл на следующую непустую того же
+    товара, а не крутил пустую."""
+    db = SessionLocal()
+    try:
+        target = db.query(ProductSlot).filter(
+            ProductSlot.machine_id == machine_id,
+            ProductSlot.slot_id == slot_id).first()
+        if not target:
+            return [slot_id]
+        key = _slot_group_key(target)
+        siblings = db.query(ProductSlot).filter(
+            ProductSlot.machine_id == machine_id,
+            ProductSlot.is_active == True).order_by(ProductSlot.slot_id).all()
+        others = [s.slot_id for s in siblings
+                  if s.slot_id != slot_id and _slot_group_key(s) == key and (s.stock_qty or 0) > 0]
+        return [slot_id] + others
+    finally:
+        db.close()
+
+
+def _set_dispensing(session_id: int):
+    db = SessionLocal()
+    try:
+        s = db.query(VendingSession).filter(VendingSession.id == session_id).first()
+        if s:
+            s.status = SessionStatus.dispensing
+            db.commit()
+    finally:
+        db.close()
+
+
+def _mark_dispensed(session_id: int, machine_id: str, slot_id: int):
+    """Успешная выдача: закрыть сессию и списать остаток именно той спирали,
+    что реально выдала (может отличаться от запрошенной при авто-переходе)."""
+    db = SessionLocal()
+    try:
+        s = db.query(VendingSession).filter(VendingSession.id == session_id).first()
+        if s:
+            s.status = SessionStatus.dispensed
+            s.slot_id = slot_id
+            s.closed_at = datetime.utcnow()
+        slot = db.query(ProductSlot).filter(
+            ProductSlot.machine_id == machine_id,
+            ProductSlot.slot_id == slot_id).first()
+        if slot and slot.stock_qty > 0:
+            slot.stock_qty -= 1
+        db.commit()
+    finally:
+        db.close()
+
+
+def _zero_slot_stock(machine_id: str, slot_id: int):
+    db = SessionLocal()
+    try:
+        slot = db.query(ProductSlot).filter(
+            ProductSlot.machine_id == machine_id,
+            ProductSlot.slot_id == slot_id).first()
+        if slot:
+            slot.stock_qty = 0
+            db.commit()
+    finally:
+        db.close()
+
+
+async def _drive_slot(session_id: int, machine_id: str, slot_id: int) -> "dict | None":
+    """Одна попытка выдачи из конкретной спирали: шлём команду контроллеру,
+    ждём результат VMC. Возвращает сырой {"success":bool,"message":str} или
+    None при таймауте/обрыве."""
     ws = machine_clients.get(machine_id)
     if ws is None:
-        logging.error(f"Machine {machine_id} went offline before dispensing session {session_id}")
-        return await _fail("machine offline")
-
-    def _mark_dispensing():
-        db = SessionLocal()
-        try:
-            s = db.query(VendingSession).filter(VendingSession.id == session_id).first()
-            if s:
-                s.status = SessionStatus.dispensing
-                db.commit()
-        finally:
-            db.close()
-    await _db(_mark_dispensing)
-
+        return None
     future: asyncio.Future = asyncio.get_event_loop().create_future()
     _dispense_waiters[session_id] = future
     try:
@@ -463,41 +544,75 @@ async def dispense(session_id: int, machine_id: str, slot_id: int) -> dict:
             "session_id": session_id,
             "slot_id": slot_id,
         }))
-        result = await asyncio.wait_for(future, timeout=settings.DISPENSE_TIMEOUT)
+        return await asyncio.wait_for(future, timeout=settings.DISPENSE_TIMEOUT)
     except asyncio.TimeoutError:
-        logging.error(f"Dispense timeout session {session_id} machine {machine_id}")
-        return await _fail("dispense timeout")
+        logging.error(f"Dispense timeout session {session_id} slot {slot_id} machine {machine_id}")
+        return None
     except Exception as e:
-        logging.error(f"Dispense send failed session {session_id}: {e}")
-        return await _fail("controller connection lost")
+        logging.error(f"Dispense send failed session {session_id} slot {slot_id}: {e}")
+        return None
     finally:
         _dispense_waiters.pop(session_id, None)
 
-    if result.get("success"):
-        def _mark_dispensed():
-            db = SessionLocal()
-            try:
-                s = db.query(VendingSession).filter(VendingSession.id == session_id).first()
-                if s:
-                    s.status = SessionStatus.dispensed
-                    s.closed_at = datetime.utcnow()
-                    slot = db.query(ProductSlot).filter(
-                        ProductSlot.machine_id == s.machine_id,
-                        ProductSlot.slot_id == s.slot_id,
-                    ).first()
-                    if slot and slot.stock_qty > 0:
-                        slot.stock_qty -= 1
-                    db.commit()
-            finally:
-                db.close()
-        await _db(_mark_dispensed)
-        await notify_kiosk(machine_id, {"type": "dispensed", "session_id": session_id})
-        logging.info(f"Session {session_id} dispensed OK")
-        return {"ok": True, "message": "dispensed"}
+
+async def dispense(session_id: int, machine_id: str, slot_id: int, auto_advance: bool = True) -> dict:
+    """Выдача с защитой от «крутит пустую спираль».
+
+    При auto_advance (обычная покупка): перебираем спирали ЭТОГО ЖЕ товара,
+    начиная с запрошенной. Перед запуском мотора спрашиваем VMC, есть ли товар
+    (0x01). Если пусто/пауза — НЕ крутим, помечаем спираль пустой и переходим к
+    следующей непустой спирали товара. Крутим только ту, где товар реально есть;
+    если заклинило — пробуем следующую. Успех — списываем остаток той спирали,
+    что выдала.
+
+    При auto_advance=False (ручная выдача оператором): бьём ровно по указанной
+    спирали, без проверки и перехода — для точной диагностики.
+
+    Сбой НЕ возвращает деньги автоматически — сессия помечается failed, клиенту
+    показывается номер поддержки, оператор решает через админку."""
+    async def _fail(reason: str) -> dict:
+        await _db(lambda: _mark_session_failed(session_id, reason))
+        await notify_kiosk(machine_id, {"type": "failed", "session_id": session_id})
+        return {"ok": False, "message": reason}
+
+    if machine_clients.get(machine_id) is None:
+        logging.error(f"Machine {machine_id} went offline before dispensing session {session_id}")
+        return await _fail("machine offline")
+
+    await _db(lambda: _set_dispensing(session_id))
+
+    if auto_advance:
+        candidates = await _db(lambda: _group_candidate_slots(machine_id, slot_id))
     else:
-        error = result.get("message", "dispense error")
-        logging.warning(f"Session {session_id} dispense failed: {error}")
-        return await _fail(error)
+        candidates = [slot_id]
+
+    last_error = "dispense error"
+    for cand in candidates:
+        # Перед запуском мотора спрашиваем VMC: есть ли товар в этой спирали.
+        # Пустую (out of stock / pause) НЕ крутим — переходим к следующей.
+        # fail-open: если VMC не ответил (старый APK), крутим как раньше.
+        if auto_advance:
+            check = await check_slot_stock(machine_id, cand)
+            if check.get("checked") and not check.get("ok"):
+                last_error = check.get("message") or "out of stock"
+                logging.info(f"Session {session_id} slot {cand} пусто ({last_error}) — не кручу, следующая спираль")
+                await _db(lambda c=cand: _zero_slot_stock(machine_id, c))
+                continue
+
+        result = await _drive_slot(session_id, machine_id, cand)
+        if result is None:
+            last_error = "dispense timeout"
+            continue
+        if result.get("success"):
+            await _db(lambda c=cand: _mark_dispensed(session_id, machine_id, c))
+            await notify_kiosk(machine_id, {"type": "dispensed", "session_id": session_id})
+            logging.info(f"Session {session_id} dispensed OK (slot {cand})")
+            return {"ok": True, "message": "dispensed"}
+        last_error = result.get("message", "dispense error")
+        logging.warning(f"Session {session_id} slot {cand} failed: {last_error}"
+                        + (", пробую следующую спираль" if auto_advance else ""))
+
+    return await _fail(last_error)
 
 
 def _mark_session_failed(session_id: int, reason: str):
@@ -1241,7 +1356,11 @@ async def force_dispense(machine_id: str, data: dict, user: AdminUser = Depends(
         finally:
             db.close()
     session_id = await _db(_create)
-    result = await dispense(session_id, machine_id, slot_id)
+    # По умолчанию — точечно по указанной спирали (диагностика). С
+    # auto_advance=true оператор может проверить авто-переход по товару (как в
+    # реальной покупке): пустую спираль не крутит, идёт к следующей непустой.
+    auto_advance = bool(data.get("auto_advance"))
+    result = await dispense(session_id, machine_id, slot_id, auto_advance=auto_advance)
     return {"success": result["ok"], "message": result["message"], "session_id": session_id}
 
 
