@@ -1356,10 +1356,12 @@ async def force_dispense(machine_id: str, data: dict, user: AdminUser = Depends(
         finally:
             db.close()
     session_id = await _db(_create)
-    # По умолчанию — точечно по указанной спирали (диагностика). С
-    # auto_advance=true оператор может проверить авто-переход по товару (как в
-    # реальной покупке): пустую спираль не крутит, идёт к следующей непустой.
-    auto_advance = bool(data.get("auto_advance"))
+    # По умолчанию ведём себя как реальная покупка: пустую спираль не крутим,
+    # переходим к следующей непустой спирали ЭТОГО ЖЕ товара (auto_advance).
+    # Оператору обычно нужно именно «выдать клиенту товар», а не крутить
+    # конкретную мёртвую спираль. Для точечной диагностики одной спирали —
+    # передать auto_advance=false явно.
+    auto_advance = bool(data.get("auto_advance", True))
     result = await dispense(session_id, machine_id, slot_id, auto_advance=auto_advance)
     return {"success": result["ok"], "message": result["message"], "session_id": session_id}
 
