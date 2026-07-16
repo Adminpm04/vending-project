@@ -463,10 +463,16 @@ def _slot_group_key(slot: "ProductSlot"):
 
 
 def _group_candidate_slots(machine_id: str, slot_id: int) -> list:
-    """Список спиралей того же товара для выдачи: запрошенная первой, затем
-    остальные с остатком по возрастанию slot_id. Нужно, чтобы при пустой/
-    заклинившей спирали автомат сам перешёл на следующую непустую того же
-    товара, а не крутил пустую."""
+    """Список спиралей того же товара для выдачи: запрошенная первой — но
+    только если по последним данным от самой VMC (0x11, см. "slot_info") у
+    неё есть остаток; иначе её вообще пропускаем и сразу идём по остальным
+    спиралям с остатком, по возрастанию slot_id. Известно-пустую спираль не
+    имеет смысла даже спрашивать живым check-slot перед попыткой — самого
+    похода к автомату не будет вообще, не только запуска мотора.
+
+    Это НЕ защищает от заклинивания спирали, у которой остаток есть по
+    данным — то по-прежнему выясняется только реальной попыткой (VMC не
+    предсказывает поломку заранее, см. разбор случая с сессией 300)."""
     db = SessionLocal()
     try:
         target = db.query(ProductSlot).filter(
@@ -478,9 +484,11 @@ def _group_candidate_slots(machine_id: str, slot_id: int) -> list:
         siblings = db.query(ProductSlot).filter(
             ProductSlot.machine_id == machine_id,
             ProductSlot.is_active == True).order_by(ProductSlot.slot_id).all()
-        others = [s.slot_id for s in siblings
-                  if s.slot_id != slot_id and _slot_group_key(s) == key and (s.stock_qty or 0) > 0]
-        return [slot_id] + others
+        group = [s for s in siblings if _slot_group_key(s) == key]
+        others = [s.slot_id for s in group if s.slot_id != slot_id and (s.stock_qty or 0) > 0]
+        if (target.stock_qty or 0) > 0:
+            return [slot_id] + others
+        return others
     finally:
         db.close()
 
