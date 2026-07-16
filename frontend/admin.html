@@ -169,7 +169,7 @@ initTheme();
 var TOKEN = localStorage.getItem('vq_session_token') || '';
 var ME = null; // {username, role}
 var S = { tab:'dash', pointId:null, machines:[], stats:null, sessions:[], slots:[], users:[],
-            fpt:'all', fst:'all', fday:'all', fq:'', blist:[] };
+            fpt:'all', fst:'all', fday:'all', fq:'', blist:[], expandedGroups:new Set() };
 
 const ROLE_LABEL = { admin:'Администратор', operator:'Оператор', viewer:'Наблюдатель' };
 const NAV_ALL = [['dash','Дашборд','▦'],['pts','Точки','◉'],['sess','Сессии','≣'],['prod','Товары','▤'],['stat','Статистика','∿'],['set','Настройки','⚙']];
@@ -646,7 +646,16 @@ async function viewPoint(c){
   const st = statOf(S.pointId);
   const dot = m&&m.online?'#2E9E5B':'#D14343'; const anim = m&&m.online?'glowdot':'glowdotred';
   const active = slots.filter(s=>s.is_active).length;
-  const rows = slots.map(s=>{
+  // Спирали одного товара (тот же ключ группировки, что и на бэкенде — см.
+  // _slot_group_key в main.py) сворачиваем в одну строку с суммарным остатком:
+  // оператору нужно «сколько RC Cola осталось и хватает ли», а не 11 моторов
+  // по отдельности. Раскрыть — увидеть/поправить каждую спираль (напр. если
+  // именно одна из них заклинила и её нужно временно выключить).
+  const slotKey = s => s.product_id!=null ? ('id:'+s.product_id) : ('name:'+s.product_name);
+  const groupsMap = {}; const groupOrder = [];
+  slots.forEach(s=>{ const k=slotKey(s); if(!groupsMap[k]){groupsMap[k]=[]; groupOrder.push(k);} groupsMap[k].push(s); });
+
+  const slotRow = (s, nested) => {
     let status,color;
     if(!s.is_active){status='Пауза';color='#9A9A9A';}
     else if(s.stock_qty<=0){status='Нет в наличии';color='#D14343';}
@@ -668,7 +677,7 @@ async function viewPoint(c){
            <button onclick="deleteSlot(${s.slot_id},'${esc(s.product_name)}')" title="Удалить слот" style="width:32px;height:32px;display:grid;place-items:center;border:1px solid var(--line);background:var(--bg);color:#D14343;border-radius:9px;cursor:pointer">${ICON_TRASH(15)}</button>
          </div>`
       : '';
-    return `<div style="display:grid;grid-template-columns:60px 1.3fr 110px 150px 100px 100px 90px;gap:12px;align-items:center;padding:9px 22px;border-top:1px solid var(--line)">
+    return `<div style="display:grid;grid-template-columns:60px 1.3fr 110px 150px 100px 100px 90px;gap:12px;align-items:center;padding:9px 22px 9px ${nested?42:22}px;border-top:1px solid var(--line);${nested?'background:var(--bg)':''}">
       <span style="font-size:13.5px;font-weight:800;color:var(--accent2)">${esc(s.slot_id)}</span>
       <div style="display:flex;align-items:center;gap:10px;min-width:0">${thumb}<span style="font-size:14px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(s.product_name)}</span></div>
       <input type="number" step="0.01" value="${s.price}" class="fld" style="width:90px" ${ro} onchange="saveSlot(${s.slot_id},'price',this.value)">
@@ -678,6 +687,49 @@ async function viewPoint(c){
       <span style="${chipS}">${status}</span>
       <span>${dispenseBtn}</span>
       <span>${actionsBtn}</span></div>`;
+  };
+
+  const groupRow = (key, gs) => {
+    const totalStock = gs.reduce((a,x)=>a+(x.stock_qty||0),0);
+    const totalCap = gs.reduce((a,x)=>a+(x.capacity||0),0);
+    const anyActive = gs.some(x=>x.is_active);
+    let status,color;
+    if(!anyActive){status='Пауза';color='#9A9A9A';}
+    else if(totalStock<=0){status='Нет в наличии';color='#D14343';}
+    else if(totalStock<=Math.max(2,gs.length)){status='Заканчивается';color='#E0A400';}
+    else {status='В наличии';color='#2E9E5B';}
+    const chipS=`display:inline-flex;align-items:center;gap:6px;font-size:11.5px;font-weight:800;color:${color};background:${color}1f;border-radius:999px;padding:6px 11px;white-space:nowrap;border:1px solid ${color}55`;
+    const first = gs[0];
+    const ids = gs.map(x=>x.slot_id);
+    const expanded = S.expandedGroups.has(key);
+    const thumb = first.image_url
+      ? `<img src="${esc(first.image_url)}" style="width:34px;height:34px;object-fit:contain;border-radius:8px;background:var(--bg);border:1px solid var(--line);flex:none">`
+      : `<span style="width:34px;height:34px;border-radius:8px;background:var(--bg);border:1px dashed var(--line);flex:none"></span>`;
+    const dispenseBtn = canEdit()
+      ? `<button onclick="forceDispense(${first.slot_id},'${esc(first.product_name)}')" ${(m&&m.online)?'':'disabled'}
+           title="${(m&&m.online)?'Выдать этот товар удалённо (автомат сам выберет непустую спираль)':'Автомат офлайн'}"
+           style="font-size:12px;font-weight:800;color:${(m&&m.online)?'#fff':'var(--text2)'};background:${(m&&m.online)?'linear-gradient(160deg,#3AA76A,#2E9E5B)':'var(--bg)'};border:1px solid ${(m&&m.online)?'transparent':'var(--line)'};border-radius:9px;padding:8px 14px;cursor:${(m&&m.online)?'pointer':'not-allowed'};white-space:nowrap">↓ Выдать</button>`
+      : '';
+    const refillBtn = canEdit()
+      ? `<button onclick="refillGroup([${ids.join(',')}])" title="Пополнить все ${gs.length} спиралей до полной ёмкости" style="width:32px;height:32px;display:grid;place-items:center;border:1px solid var(--line);background:var(--bg);color:var(--accent2);border-radius:9px;cursor:pointer;font-size:15px">⟳</button>`
+      : '';
+    const toggleBtn = `<button onclick="toggleGroup('${key}')" title="${expanded?'Свернуть':'Показать'} спирали (${gs.length})" style="display:flex;align-items:center;gap:5px;font-size:12.5px;font-weight:800;color:var(--accent2);background:none;border:none;cursor:pointer;padding:0">${expanded?'▾':'▸'} ${gs.length}</button>`;
+    const summary = `<div style="display:grid;grid-template-columns:60px 1.3fr 110px 150px 100px 100px 90px;gap:12px;align-items:center;padding:9px 22px;border-top:1px solid var(--line)">
+      <span>${toggleBtn}</span>
+      <div style="display:flex;align-items:center;gap:10px;min-width:0">${thumb}<span style="font-size:14px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(first.product_name)}</span></div>
+      <input type="number" step="0.01" value="${first.price}" class="fld" style="width:90px" ${canEdit()?'':'disabled'} onchange="bulkSetPrice([${ids.join(',')}],this.value)" title="Цена применится ко всем ${gs.length} спиралям">
+      <div style="display:flex;align-items:center;gap:8px">
+        <span style="font-size:14px;font-weight:800">${totalStock}</span>
+        <span class="sub" style="white-space:nowrap">из ${totalCap}</span></div>
+      <span style="${chipS}">${status}</span>
+      <span>${dispenseBtn}</span>
+      <span>${refillBtn}</span></div>`;
+    return summary + (expanded ? gs.map(s=>slotRow(s,true)).join('') : '');
+  };
+
+  const rows = groupOrder.map(k=>{
+    const gs = groupsMap[k];
+    return gs.length>1 ? groupRow(k,gs) : slotRow(gs[0],false);
   }).join('');
   const header = `<div>
     <button onclick="go('pts')" style="border:none;background:transparent;color:var(--accent2);font-weight:800;font-size:13.5px;cursor:pointer;padding:0">← Все точки</button></div>
@@ -780,6 +832,39 @@ async function saveSlot(slot_id, field, value){
   body[field] = field==='price'?parseFloat(value):parseInt(value,10);
   try{ await api(`/api/admin/machines/${encodeURIComponent(S.pointId)}/slots`,{method:'POST',body:JSON.stringify(body)});
     toast('Сохранено'); await refreshCore(); }catch(e){ toast('Ошибка сохранения'); }
+}
+// Свернуть/развернуть группу спиралей одного товара в списке слотов точки.
+function toggleGroup(key){
+  if(S.expandedGroups.has(key)) S.expandedGroups.delete(key); else S.expandedGroups.add(key);
+  render();
+}
+// Одна цена на весь товар — применяем ко всем его спиралям разом, чтобы не
+// править 11 полей вручную.
+async function bulkSetPrice(slotIds, value){
+  const price = parseFloat(value); if(isNaN(price)) return;
+  try{
+    await Promise.all(slotIds.map(id=>{
+      const s = S.slots.find(x=>x.slot_id===id); if(!s) return null;
+      const body = {slot_id:id, product_name:s.product_name, price, stock_qty:s.stock_qty, capacity:s.capacity};
+      if(s.product_id) body.product_id = s.product_id;
+      return api(`/api/admin/machines/${encodeURIComponent(S.pointId)}/slots`,{method:'POST',body:JSON.stringify(body)});
+    }));
+    toast('Цена обновлена на всех спиралях'); await refreshCore(); render();
+  }catch(e){ toast('Ошибка сохранения цены'); }
+}
+// Пополнить все спирали товара до полной ёмкости одной кнопкой — обычная
+// операция после физической загрузки автомата, не вводить остаток по каждой
+// спирали вручную.
+async function refillGroup(slotIds){
+  try{
+    await Promise.all(slotIds.map(id=>{
+      const s = S.slots.find(x=>x.slot_id===id); if(!s) return null;
+      const body = {slot_id:id, product_name:s.product_name, price:s.price, stock_qty:s.capacity, capacity:s.capacity};
+      if(s.product_id) body.product_id = s.product_id;
+      return api(`/api/admin/machines/${encodeURIComponent(S.pointId)}/slots`,{method:'POST',body:JSON.stringify(body)});
+    }));
+    toast('Пополнено до полной ёмкости'); await refreshCore(); render();
+  }catch(e){ toast('Ошибка пополнения'); }
 }
 // Изменить слот: подставляем текущие значения в форму «Добавить/изменить слот» —
 // тот же upsert-эндпоинт по существующему № слота обновляет его, а не создаёт новый.
