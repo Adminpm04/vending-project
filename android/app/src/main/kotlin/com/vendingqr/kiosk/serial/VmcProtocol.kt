@@ -189,6 +189,30 @@ object VmcProtocol {
         return SelectionState(state == SELECTION_OK, state, slot, message)
     }
 
+    data class SlotInfo(
+        val slot: Int,
+        val priceRaw: Long,
+        val inventory: Int,
+        val capacity: Int,
+        val commodityNumber: Int,
+        val paused: Boolean,
+    )
+
+    /** Разобрать Text пакета 0x11 (разд. 4.2.1): VMC сам, без запроса, шлёт
+     * реальный остаток по селекции — "Upper computer doesn't need to
+     * calculate the selection inventory. It can get inventory info from
+     * this command." Формат: slot(2) + price(4) + inventory(1) + capacity(1)
+     * + commodity number(2) + status(1: 1=пауза, 0=норма). */
+    fun parseSlotInfo(text: ByteArray): SlotInfo {
+        val slot = ((text[0].toInt() and 0xFF) shl 8) or (text[1].toInt() and 0xFF)
+        val priceRaw = (0 until 4).fold(0L) { acc, i -> (acc shl 8) or (text[2 + i].toLong() and 0xFF) }
+        val inventory = text[6].toInt() and 0xFF
+        val capacity = text[7].toInt() and 0xFF
+        val commodityNumber = ((text[8].toInt() and 0xFF) shl 8) or (text[9].toInt() and 0xFF)
+        val paused = (text[10].toInt() and 0xFF) == 1
+        return SlotInfo(slot, priceRaw, inventory, capacity, commodityNumber, paused)
+    }
+
     data class Packet(val command: Int, val packNo: Int?, val text: ByteArray)
 
     /**

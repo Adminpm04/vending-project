@@ -66,6 +66,7 @@ class VMCLink:
         self.selection_events: asyncio.Queue = asyncio.Queue()
         self.elevator_events: asyncio.Queue = asyncio.Queue()
         self.menu_events: asyncio.Queue = asyncio.Queue()
+        self.slot_info_events: asyncio.Queue = asyncio.Queue()
         self.synced = False
 
     def _next_pack_no(self) -> int:
@@ -172,9 +173,30 @@ class VMCLink:
             asyncio.run_coroutine_threadsafe(
                 self.menu_events.put(resp), self._loop)
         elif command == vmc.CMD_SLOT_INFO:
+            # VMC сам, без нашего запроса, докладывает реальный остаток по
+            # селекции (см. parse_slot_info) — пересылаем на сервер как есть,
+            # сервер уже решает, доверять ли и как использовать.
+            info = vmc.parse_slot_info(text)
+            log.info(f"Slot info: {info}")
+            asyncio.run_coroutine_threadsafe(
+                self.slot_info_events.put(info), self._loop)
+        elif command == vmc.CMD_SLOT_INFO:
             pass  # цены/остатки ведёт сервер — информация VMC не используется
         else:
             log.debug(f"VMC cmd 0x{command:02X} text={text.hex()}")
+
+
+async def forward_slot_info(link: VMCLink, ws):
+    """VMC сам, без нашего запроса, шлёт 0x11 с реальным остатком по
+    селекции — пересылаем на сервер сразу как пришло, не дожидаясь запроса.
+    Отдельная задача, не завязанная на входящий цикл сообщений от сервера."""
+    while True:
+        info = await link.slot_info_events.get()
+        try:
+            await ws.send(json.dumps({"type": "slot_info", **info}))
+        except Exception as e:
+            log.warning(f"Failed to forward slot_info: {e}")
+            return
 
 
 async def ws_loop(link: VMCLink):
@@ -186,28 +208,32 @@ async def ws_loop(link: VMCLink):
             async with websockets.connect(url, ping_interval=20) as ws:
                 log.info(f"Connected to server as {MACHINE_ID}")
                 backoff = 1
-                async for raw in ws:
-                    try:
-                        msg = json.loads(raw)
-                    except ValueError:
-                        continue
-                    if msg.get("type") == "ping":
-                        await ws.send('{"type":"pong"}')
-                    elif msg.get("type") == "dispense":
-                        asyncio.create_task(
-                            handle_dispense(link, ws, msg["session_id"], msg["slot_id"]))
-                    elif msg.get("type") == "check_slot":
-                        asyncio.create_task(
-                            handle_check_slot(link, ws, msg["request_id"], msg["slot_id"]))
-                    elif msg.get("type") == "check_elevator":
-                        asyncio.create_task(
-                            handle_check_elevator(link, ws, msg["request_id"]))
-                    elif msg.get("type") == "cancel_selection":
-                        asyncio.create_task(
-                            handle_cancel_selection(link, ws, msg["request_id"]))
-                    elif msg.get("type") == "query_selection_number":
-                        asyncio.create_task(
-                            handle_query_selection_number(link, ws, msg["request_id"]))
+                forward_task = asyncio.create_task(forward_slot_info(link, ws))
+                try:
+                    async for raw in ws:
+                        try:
+                            msg = json.loads(raw)
+                        except ValueError:
+                            continue
+                        if msg.get("type") == "ping":
+                            await ws.send('{"type":"pong"}')
+                        elif msg.get("type") == "dispense":
+                            asyncio.create_task(
+                                handle_dispense(link, ws, msg["session_id"], msg["slot_id"]))
+                        elif msg.get("type") == "check_slot":
+                            asyncio.create_task(
+                                handle_check_slot(link, ws, msg["request_id"], msg["slot_id"]))
+                        elif msg.get("type") == "check_elevator":
+                            asyncio.create_task(
+                                handle_check_elevator(link, ws, msg["request_id"]))
+                        elif msg.get("type") == "cancel_selection":
+                            asyncio.create_task(
+                                handle_cancel_selection(link, ws, msg["request_id"]))
+                        elif msg.get("type") == "query_selection_number":
+                            asyncio.create_task(
+                                handle_query_selection_number(link, ws, msg["request_id"]))
+                finally:
+                    forward_task.cancel()
         except Exception as e:
             log.warning(f"WS disconnected: {e}; retry in {backoff}s")
             await asyncio.sleep(backoff)

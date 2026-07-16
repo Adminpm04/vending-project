@@ -53,12 +53,34 @@ class VmcController(
             Log.e(TAG, "failed to open serial port", e)
         }
         ws.connect()
+        executor.submit(::forwardSlotInfoLoop)
     }
 
     fun stop() {
         ws.disconnect()
         link.stop()
         executor.shutdownNow()
+    }
+
+    /** VMC сам, без нашего запроса, шлёт 0x11 с реальным остатком по селекции —
+     * пересылаем на сервер сразу как пришло, независимо от команд с сервера. */
+    private fun forwardSlotInfoLoop() {
+        while (!Thread.currentThread().isInterrupted) {
+            val info = try {
+                link.slotInfoEvents.take()
+            } catch (e: InterruptedException) {
+                return
+            }
+            ws.send(JSONObject().apply {
+                put("type", "slot_info")
+                put("slot", info.slot)
+                put("price_raw", info.priceRaw)
+                put("inventory", info.inventory)
+                put("capacity", info.capacity)
+                put("commodity_number", info.commodityNumber)
+                put("paused", info.paused)
+            })
+        }
     }
 
     private fun handleServerMessage(msg: JSONObject) {

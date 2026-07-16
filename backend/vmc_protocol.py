@@ -242,3 +242,25 @@ def parse_selection_state(text: bytes) -> dict:
         "slot": slot,
         "message": SELECTION_STATES.get(state, f"state 0x{state:02X}"),
     }
+
+
+def parse_slot_info(text: bytes) -> dict:
+    """Разобрать Text пакета 0x11 (раздел 4.2.1): VMC сам, без запроса,
+    присылает по каждой селекции её реальный остаток — "Upper computer
+    doesn't need to calculate the selection inventory. It can get inventory
+    info from this command." Формат: selection(2) + price(4) + inventory(1)
+    + capacity(1) + commodity number(2) + status(1: 1=пауза, 0=норма)."""
+    slot = int.from_bytes(text[0:2], "big")
+    price_raw = int.from_bytes(text[2:6], "big")
+    inventory = text[6]
+    capacity = text[7]
+    commodity_number = int.from_bytes(text[8:10], "big")
+    status = text[10]
+    return {
+        "slot": slot,
+        "price_raw": price_raw,
+        "inventory": inventory,
+        "capacity": capacity,
+        "commodity_number": commodity_number,
+        "paused": status == 1,
+    }

@@ -529,6 +529,31 @@ def _zero_slot_stock(machine_id: str, slot_id: int):
         db.close()
 
 
+def _sync_slot_info(machine_id: str, slot_id: int, msg: dict):
+    """VMC сам прислал 0x11 (реальный остаток) без нашего запроса — обновляем
+    slot.stock_qty её значением вместо ручной цифры. paused=true (селекция в
+    аппаратной паузе) считаем как 0 — так же, как уже трактуем «Selection
+    pause» от check-slot, чтобы поведение было единообразным. Если слот не
+    заведён у нас (напр. ещё не настроенная позиция) — просто игнорируем,
+    ничего не создаём сами."""
+    db = SessionLocal()
+    try:
+        slot = db.query(ProductSlot).filter(
+            ProductSlot.machine_id == machine_id,
+            ProductSlot.slot_id == slot_id).first()
+        if not slot:
+            return
+        paused = bool(msg.get("paused"))
+        inventory = msg.get("inventory")
+        slot.stock_qty = 0 if paused else (inventory if isinstance(inventory, int) else slot.stock_qty)
+        capacity = msg.get("capacity")
+        if isinstance(capacity, int) and capacity > 0:
+            slot.capacity = capacity
+        db.commit()
+    finally:
+        db.close()
+
+
 async def _drive_slot(session_id: int, machine_id: str, slot_id: int) -> "dict | None":
     """Одна попытка выдачи из конкретной спирали: шлём команду контроллеру,
     ждём результат VMC. Возвращает сырой {"success":bool,"message":str} или
@@ -735,6 +760,16 @@ async def machine_ws(websocket: WebSocket, machine_id: str):
                 waiter = _menu_waiters.get(msg.get("request_id"))
                 if waiter and not waiter.done():
                     waiter.set_result(msg)
+            elif msg.get("type") == "slot_info":
+                # VMC сам, без нашего запроса, докладывает реальный остаток по
+                # селекции (см. vmc_protocol.parse_slot_info) — держим
+                # stock_qty синхронным с этим вместо ручных цифр-догадок.
+                # Логируем отдельной меткой, чтобы можно было живьём проверить,
+                # что конкретно шлёт эта прошивка (раздел 4.2.1 документации).
+                logging.info(f"SLOT_INFO {machine_id}: {msg}")
+                slot_id = msg.get("slot")
+                if isinstance(slot_id, int):
+                    await _db(lambda mid=machine_id, sid=slot_id, m=msg: _sync_slot_info(mid, sid, m))
             # type=="pong"/прочее — игнорируем
     except (WebSocketDisconnect, Exception):
         pass
