@@ -232,6 +232,14 @@ async def ws_loop(link: VMCLink):
                         elif msg.get("type") == "query_selection_number":
                             asyncio.create_task(
                                 handle_query_selection_number(link, ws, msg["request_id"]))
+                        elif msg.get("type") == "refresh_inventory":
+                            # Оператор нажал «Обновить остатки» — просим VMC
+                            # заново прислать 0x11 по каждой селекции (разд.
+                            # 4.4.4: повторная синхронизация вызывает свежую
+                            # выгрузку). Ответа не ждём — 0x11 сами придут
+                            # через forward_slot_info.
+                            log.info("refresh_inventory requested")
+                            link.queue_sync()
                 finally:
                     forward_task.cancel()
         except Exception as e:

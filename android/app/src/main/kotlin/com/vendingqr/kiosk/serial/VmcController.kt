@@ -107,6 +107,17 @@ class VmcController(
                 val requestId = msg.optString("request_id")
                 executor.submit { handleQuerySelectionNumber(requestId) }
             }
+            "refresh_inventory" -> {
+                // Оператор нажал «Обновить остатки» в админке — просим VMC
+                // заново прислать 0x11 по каждой селекции (разд. 4.4.4:
+                // повторная синхронизация вызывает свежую выгрузку остатков).
+                // Ответа ждать не нужно — пакеты 0x11 сами уйдут на сервер
+                // через forwardSlotInfoLoop, как только придут.
+                if (link.isRunning) {
+                    Log.i(TAG, "refresh_inventory requested")
+                    link.queueSync()
+                }
+            }
         }
     }
 

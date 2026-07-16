@@ -1411,6 +1411,20 @@ async def admin_check_elevator(machine_id: str):
     return await check_elevator_status(machine_id)
 
 
+@app.post("/api/admin/machines/{machine_id}/refresh-stock", dependencies=[Depends(require_operator)])
+async def admin_refresh_stock(machine_id: str):
+    """«Обновить остатки»: просим контроллер заново синхронизироваться с VMC
+    (0x31) — по протоколу (разд. 4.4.4) VMC в ответ сам присылает свежий
+    остаток/ёмкость/статус по каждой селекции (0x11), без похода к автомату.
+    Без ожидания ответа — пакеты 0x11 придут отдельно и обновят stock_qty
+    через уже существующий обработчик "slot_info" (см. machine_ws)."""
+    ws = machine_clients.get(machine_id)
+    if ws is None:
+        raise HTTPException(503, "machine offline")
+    await ws.send_text(json.dumps({"type": "refresh_inventory"}))
+    return {"success": True}
+
+
 @app.post("/api/admin/machines/{machine_id}/check-slot", dependencies=[Depends(require_operator)])
 async def admin_check_slot(machine_id: str, data: dict):
     """Диагностика: спросить датчик про конкретный слот (0x01/0x02) прямо

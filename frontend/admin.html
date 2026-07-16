@@ -204,6 +204,7 @@ function iconSvg(path, size){
 const ICON_EDIT = (size)=>iconSvg('<path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5Z"/>', size);
 const ICON_TRASH = (size)=>iconSvg('<polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>', size);
 const ICON_KEY = (size)=>iconSvg('<circle cx="7.5" cy="15.5" r="5.5"/><path d="M21 2l-9.6 9.6"/><path d="M15.5 7.5l3 3L22 7l-3-3"/>', size);
+const ICON_REFRESH = (size)=>iconSvg('<polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>', size);
 function chip(status){
   const [t,c] = STMAP[status] || [status,'#9A9A9A'];
   return `<span style="display:inline-flex;align-items:center;gap:6px;font-size:11.5px;font-weight:800;color:${c};background:${c}1f;border-radius:999px;padding:6px 11px;white-space:nowrap;border:1px solid ${c}55">${t}</span>`;
@@ -634,6 +635,16 @@ async function regenToken(mid){
     alert('Новый токен контроллера (сохраните — показывается один раз):\n\n'+r.secret_token);
   }catch(e){ toast('Не удалось перевыпустить токен'); }
 }
+// Просим автомат заново прислать реальный остаток по каждой спирали (0x11) —
+// ответ приходит асинхронно через сервер, поэтому просто ждём пару секунд и
+// перечитываем слоты, а не пытаемся поймать прямой ответ на этот запрос.
+async function refreshStock(mid){
+  try{
+    await api(`/api/admin/machines/${encodeURIComponent(mid)}/refresh-stock`,{method:'POST'});
+    toast('Запрошено — автомат отвечает не сразу, обновляю…');
+    setTimeout(async()=>{ await refreshCore(); render(); toast('Остатки обновлены'); }, 2500);
+  }catch(e){ toast(e.message==='machine offline' ? 'Автомат сейчас офлайн' : 'Не удалось запросить остатки'); }
+}
 
 // A3 Слоты точки
 async function viewPoint(c){
@@ -743,6 +754,9 @@ async function viewPoint(c){
         <div style="background:var(--bg);border:1px solid var(--line);border-radius:14px;padding:10px 16px"><div class="sub" style="color:var(--text2)">Выручка сегодня</div><div style="font-size:19px;font-weight:800;color:var(--accent2)">${fmt(st.revenue)}</div></div>
         <div style="background:var(--bg);border:1px solid var(--line);border-radius:14px;padding:10px 16px"><div class="sub">Продаж</div><div style="font-size:19px;font-weight:800">${st.sales}</div></div>
         <div style="background:var(--bg);border:1px solid var(--line);border-radius:14px;padding:10px 16px"><div class="sub">Слотов активно</div><div style="font-size:19px;font-weight:800">${active} / ${slots.length}</div></div>
+        ${canEdit()?`<button onclick="refreshStock('${esc(S.pointId)}')" ${(m&&m.online)?'':'disabled'}
+             title="${(m&&m.online)?'Спросить у автомата реальный остаток по каждой спирали':'Автомат офлайн'}"
+             style="display:flex;align-items:center;gap:8px;font-size:12.5px;font-weight:800;color:var(--text);background:var(--bg);border:1.5px solid var(--line);border-radius:14px;padding:10px 16px;cursor:${(m&&m.online)?'pointer':'not-allowed'};opacity:${(m&&m.online)?'1':'.5'}">${ICON_REFRESH(15)}Обновить остатки</button>`:''}
         ${canEdit()?`<button onclick="regenToken('${esc(S.pointId)}')" title="Выдать новый токен контроллера для планшета" style="display:flex;align-items:center;gap:8px;font-size:12.5px;font-weight:800;color:var(--text);background:var(--bg);border:1.5px solid var(--line);border-radius:14px;padding:10px 16px;cursor:pointer">${ICON_KEY(15)}Перевыпустить токен</button>`:''}
       </div></div>`;
   const table = `<div class="cardbox" style="border-radius:22px;overflow:hidden">
