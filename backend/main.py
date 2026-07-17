@@ -556,12 +556,21 @@ def _zero_slot_stock(machine_id: str, slot_id: int):
 
 
 def _sync_slot_info(machine_id: str, slot_id: int, msg: dict):
-    """VMC сам прислал 0x11 (реальный остаток) без нашего запроса — обновляем
-    slot.stock_qty её значением вместо ручной цифры. paused=true (селекция в
-    аппаратной паузе) считаем как 0 — так же, как уже трактуем «Selection
-    pause» от check-slot, чтобы поведение было единообразным. Если слот не
-    заведён у нас (напр. ещё не настроенная позиция) — просто игнорируем,
-    ничего не создаём сами."""
+    """VMC сам прислал 0x11 (свой счётчик остатка) без нашего запроса.
+
+    ВАЖНО про эту прошивку: её внутренний счётчик уменьшается ТОЛЬКО при
+    успешной выдаче, а при пустом прокруте (спираль крутанулась, но товар не
+    выпал) — НЕ уменьшается. Значит по пустым спиралям он завышен и врёт.
+    Поэтому 0x11 может только ПОНИЖАТЬ наш остаток (если VMC насчитал меньше —
+    что-то выдал), но НЕ повышать: иначе он воскрешал бы спираль, которую мы
+    уже вычислили пустой по факту заклинивания (jam → _zero_slot_stock), и
+    автомат снова крутил бы её впустую при каждой покупке.
+
+    Поднять остаток вверх может только оператор — кнопкой «Пополнить» после
+    физической загрузки автомата (там stock прямо задаётся = capacity).
+
+    paused=true (аппаратная пауза селекции) — всегда 0. Слот, которого у нас
+    нет, игнорируем."""
     db = SessionLocal()
     try:
         slot = db.query(ProductSlot).filter(
@@ -569,12 +578,15 @@ def _sync_slot_info(machine_id: str, slot_id: int, msg: dict):
             ProductSlot.slot_id == slot_id).first()
         if not slot:
             return
-        paused = bool(msg.get("paused"))
-        inventory = msg.get("inventory")
-        slot.stock_qty = 0 if paused else (inventory if isinstance(inventory, int) else slot.stock_qty)
         capacity = msg.get("capacity")
         if isinstance(capacity, int) and capacity > 0:
             slot.capacity = capacity
+        if bool(msg.get("paused")):
+            slot.stock_qty = 0
+        else:
+            inventory = msg.get("inventory")
+            if isinstance(inventory, int) and inventory < (slot.stock_qty or 0):
+                slot.stock_qty = inventory
         db.commit()
     finally:
         db.close()
