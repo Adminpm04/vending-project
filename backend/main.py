@@ -652,6 +652,8 @@ async def dispense(session_id: int, machine_id: str, slot_id: int, auto_advance:
 
         result = await _drive_slot(session_id, machine_id, cand)
         if result is None:
+            # Нет ответа от VMC (связь/таймаут) — НЕ признак пустой спирали,
+            # остаток не трогаем, просто пробуем следующую.
             last_error = "dispense timeout"
             continue
         if result.get("success"):
@@ -660,8 +662,16 @@ async def dispense(session_id: int, machine_id: str, slot_id: int, auto_advance:
             logging.info(f"Session {session_id} dispensed OK (slot {cand})")
             return {"ok": True, "message": "dispensed"}
         last_error = result.get("message", "dispense error")
+        # Спираль прокрутилась, но товар не выпал (drop-sensor не увидел
+        # падения) — по факту она ПУСТАЯ (или заклинила). Помечаем её пустой,
+        # чтобы НЕ крутить её впустую при каждой следующей покупке. Это и есть
+        # причина «крутит одну и ту же пустую спираль каждый раз»: раньше
+        # остаток не обнулялся, и следующая покупка снова била в неё первой.
+        # Вернуть в работу — «Обновить остатки» после физической загрузки.
+        if auto_advance:
+            await _db(lambda c=cand: _zero_slot_stock(machine_id, c))
         logging.warning(f"Session {session_id} slot {cand} failed: {last_error}"
-                        + (", пробую следующую спираль" if auto_advance else ""))
+                        + (", помечаю пустой и пробую следующую спираль" if auto_advance else ""))
 
     return await _fail(last_error)
 
