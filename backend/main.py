@@ -463,25 +463,23 @@ def _slot_group_key(slot: "ProductSlot"):
 
 
 def _group_candidate_slots(machine_id: str, slot_id: int) -> list:
-    """Список спиралей того же товара для выдачи, от надёжных к проблемным.
+    """Список спиралей того же товара для выдачи — в порядке от «наиболее
+    вероятно полной» к «наиболее вероятно пустой».
 
-    Известно-пустые (по свежим данным от VMC, см. "slot_info"/0x11) в список
-    вообще не попадают — не тратим на них даже живой check-slot, не то что
-    попытку мотора.
+    Известно-пустые (stock_qty=0) в список вообще не попадают.
 
-    Остальные — сортируем по количеству реальных заклиниваний за всё время
-    (vending_sessions.error ILIKE '%jam%'), от меньшего к большему; при
-    равенстве — по номеру спирали, для стабильности и предсказуемости при
-    диагностике. Так система сама учится: спираль, которая уже клинила
-    раньше, отправляется в конец очереди этого товара и пробуется, только
-    если более надёжные уже закончились — вместо того, чтобы каждый раз
-    первой пытаться ту, что уже показала себя проблемной (независимо от
-    того, была ли она изначально "первой" по номеру).
+    Порядок остальных по ключу (last_dispensed, slot_id), по возрастанию:
+    спираль, которая ДАВНО (или ни разу) не выдавала, идёт первой; спираль,
+    которая выдала СОВСЕМ НЕДАВНО — последней. Причина: на этой прошивке
+    счётчик остатка врёт (см. _sync_slot_info), а по факту в спирали часто
+    1-2 бутылки. Значит спираль, только что успешно выдавшая, скорее всего
+    уже пуста — и пробовать её первой = холостой прокрут. Раскладывая выдачи
+    по разным спиралям (round-robin), мы почти всегда бьём в непустую с
+    первого раза, а не в только что опустевшую.
 
-    Живая проверка перед запуском (0x01) всё равно остаётся — от заклинивания
-    спирали, у которой остаток есть и раньше проблем не было, это не
-    защищает: VMC не предсказывает поломку заранее, только по факту попытки
-    (см. разбор сессии 300)."""
+    Живая проверка перед запуском (0x01) и «пометить пустой при холостом
+    прокруте» (jam → stock=0) остаются — но их роль теперь подстраховочная:
+    основную работу делает сам порядок."""
     db = SessionLocal()
     try:
         target = db.query(ProductSlot).filter(
@@ -498,15 +496,16 @@ def _group_candidate_slots(machine_id: str, slot_id: int) -> list:
         if not stocked_ids:
             return []
         from sqlalchemy import func
-        jam_counts = dict(
-            db.query(VendingSession.slot_id, func.count(VendingSession.id))
+        # Когда каждая спираль в последний раз реально выдала товар.
+        last_disp = dict(
+            db.query(VendingSession.slot_id, func.max(VendingSession.closed_at))
               .filter(VendingSession.machine_id == machine_id,
                       VendingSession.slot_id.in_(stocked_ids),
-                      VendingSession.status == SessionStatus.failed,
-                      VendingSession.error.ilike("%jam%"))
+                      VendingSession.status == SessionStatus.dispensed)
               .group_by(VendingSession.slot_id).all()
         )
-        return sorted(stocked_ids, key=lambda sid: (jam_counts.get(sid, 0), sid))
+        never = datetime.min
+        return sorted(stocked_ids, key=lambda sid: (last_disp.get(sid) or never, sid))
     finally:
         db.close()
 
