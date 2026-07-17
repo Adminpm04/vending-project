@@ -30,6 +30,12 @@ app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], all
 
 # machine_id -> WebSocket контроллера точки (RS232-агент)
 machine_clients: dict[str, WebSocket] = {}
+# machine_id -> время, до которого доверяем 0x11 полностью (и повышать остаток).
+# Ставится, когда оператор нажал «Обновить остатки» (явный сигнал «я загрузил
+# автомат, синхронизируй по-настоящему»). Вне окна фоновые 0x11 могут только
+# ПОНИЖАТЬ остаток — счётчик прошивки завышен по пустым спиралям, см.
+# _sync_slot_info.
+_slot_info_trust_until: dict[str, datetime] = {}
 # machine_id -> WebSocket'ы kiosk-интерфейсов (экран может переподключаться)
 kiosk_clients: dict[str, list[WebSocket]] = {}
 # session_id -> Future с результатом выдачи от контроллера
@@ -554,7 +560,7 @@ def _zero_slot_stock(machine_id: str, slot_id: int):
         db.close()
 
 
-def _sync_slot_info(machine_id: str, slot_id: int, msg: dict):
+def _sync_slot_info(machine_id: str, slot_id: int, msg: dict, trusted: bool = False):
     """VMC сам прислал 0x11 (свой счётчик остатка) без нашего запроса.
 
     ВАЖНО про эту прошивку: её внутренний счётчик уменьшается ТОЛЬКО при
@@ -584,8 +590,12 @@ def _sync_slot_info(machine_id: str, slot_id: int, msg: dict):
             slot.stock_qty = 0
         else:
             inventory = msg.get("inventory")
-            if isinstance(inventory, int) and inventory < (slot.stock_qty or 0):
-                slot.stock_qty = inventory
+            if isinstance(inventory, int):
+                # trusted (оператор нажал «Обновить остатки» — только что
+                # загрузил автомат): доверяем счётчику полностью, ставим как
+                # есть, в т.ч. вверх. Иначе (фоновый 0x11) — только вниз.
+                if trusted or inventory < (slot.stock_qty or 0):
+                    slot.stock_qty = inventory
         db.commit()
     finally:
         db.close()
@@ -816,7 +826,9 @@ async def machine_ws(websocket: WebSocket, machine_id: str):
                 logging.info(f"SLOT_INFO {machine_id}: {msg}")
                 slot_id = msg.get("slot")
                 if isinstance(slot_id, int):
-                    await _db(lambda mid=machine_id, sid=slot_id, m=msg: _sync_slot_info(mid, sid, m))
+                    trust_until = _slot_info_trust_until.get(machine_id)
+                    trusted = trust_until is not None and datetime.utcnow() < trust_until
+                    await _db(lambda mid=machine_id, sid=slot_id, m=msg, t=trusted: _sync_slot_info(mid, sid, m, t))
             # type=="pong"/прочее — игнорируем
     except (WebSocketDisconnect, Exception):
         pass
@@ -1468,6 +1480,11 @@ async def admin_refresh_stock(machine_id: str):
     ws = machine_clients.get(machine_id)
     if ws is None:
         raise HTTPException(503, "machine offline")
+    # Явный запрос оператора = «доверяй счётчику автомата, я его загрузил».
+    # Открываем окно, в котором приходящие 0x11 могут и ПОВЫШАТЬ остаток
+    # (обычные фоновые 0x11 — только понижают). 20 сек с запасом на всю пачку.
+    from datetime import timedelta
+    _slot_info_trust_until[machine_id] = datetime.utcnow() + timedelta(seconds=20)
     await ws.send_text(json.dumps({"type": "refresh_inventory"}))
     return {"success": True}
 
