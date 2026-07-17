@@ -463,16 +463,25 @@ def _slot_group_key(slot: "ProductSlot"):
 
 
 def _group_candidate_slots(machine_id: str, slot_id: int) -> list:
-    """Список спиралей того же товара для выдачи: запрошенная первой — но
-    только если по последним данным от самой VMC (0x11, см. "slot_info") у
-    неё есть остаток; иначе её вообще пропускаем и сразу идём по остальным
-    спиралям с остатком, по возрастанию slot_id. Известно-пустую спираль не
-    имеет смысла даже спрашивать живым check-slot перед попыткой — самого
-    похода к автомату не будет вообще, не только запуска мотора.
+    """Список спиралей того же товара для выдачи, от надёжных к проблемным.
 
-    Это НЕ защищает от заклинивания спирали, у которой остаток есть по
-    данным — то по-прежнему выясняется только реальной попыткой (VMC не
-    предсказывает поломку заранее, см. разбор случая с сессией 300)."""
+    Известно-пустые (по свежим данным от VMC, см. "slot_info"/0x11) в список
+    вообще не попадают — не тратим на них даже живой check-slot, не то что
+    попытку мотора.
+
+    Остальные — сортируем по количеству реальных заклиниваний за всё время
+    (vending_sessions.error ILIKE '%jam%'), от меньшего к большему; при
+    равенстве — по номеру спирали, для стабильности и предсказуемости при
+    диагностике. Так система сама учится: спираль, которая уже клинила
+    раньше, отправляется в конец очереди этого товара и пробуется, только
+    если более надёжные уже закончились — вместо того, чтобы каждый раз
+    первой пытаться ту, что уже показала себя проблемной (независимо от
+    того, была ли она изначально "первой" по номеру).
+
+    Живая проверка перед запуском (0x01) всё равно остаётся — от заклинивания
+    спирали, у которой остаток есть и раньше проблем не было, это не
+    защищает: VMC не предсказывает поломку заранее, только по факту попытки
+    (см. разбор сессии 300)."""
     db = SessionLocal()
     try:
         target = db.query(ProductSlot).filter(
@@ -485,10 +494,19 @@ def _group_candidate_slots(machine_id: str, slot_id: int) -> list:
             ProductSlot.machine_id == machine_id,
             ProductSlot.is_active == True).order_by(ProductSlot.slot_id).all()
         group = [s for s in siblings if _slot_group_key(s) == key]
-        others = [s.slot_id for s in group if s.slot_id != slot_id and (s.stock_qty or 0) > 0]
-        if (target.stock_qty or 0) > 0:
-            return [slot_id] + others
-        return others
+        stocked_ids = [s.slot_id for s in group if (s.stock_qty or 0) > 0]
+        if not stocked_ids:
+            return []
+        from sqlalchemy import func
+        jam_counts = dict(
+            db.query(VendingSession.slot_id, func.count(VendingSession.id))
+              .filter(VendingSession.machine_id == machine_id,
+                      VendingSession.slot_id.in_(stocked_ids),
+                      VendingSession.status == SessionStatus.failed,
+                      VendingSession.error.ilike("%jam%"))
+              .group_by(VendingSession.slot_id).all()
+        )
+        return sorted(stocked_ids, key=lambda sid: (jam_counts.get(sid, 0), sid))
     finally:
         db.close()
 
