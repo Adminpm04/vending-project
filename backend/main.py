@@ -659,6 +659,14 @@ async def dispense(session_id: int, machine_id: str, slot_id: int, auto_advance:
         candidates = [slot_id]
 
     last_error = "dispense error"
+    # Сколько РЕАЛЬНЫХ прокрутов мотора (не считая проверок 0x01 без мотора)
+    # готовы сделать за одну выдачу, прежде чем сдаться. Защита лифта/механики
+    # и клиента: если ряд физически кончился, не крутим все 11 пустых спиралей
+    # по несколько минут, а после нескольких холостых попыток честно говорим
+    # «товар закончился». Пустые/заблокированные спирали, отсеянные проверкой
+    # 0x01 БЕЗ мотора, в этот лимит не входят — они бесплатны.
+    max_spins = 4
+    spins = 0
     for cand in candidates:
         # Перед запуском мотора спрашиваем VMC: есть ли товар в этой спирали.
         # Пустую (out of stock / pause) НЕ крутим — переходим к следующей.
@@ -671,6 +679,12 @@ async def dispense(session_id: int, machine_id: str, slot_id: int, auto_advance:
                 await _db(lambda c=cand: _zero_slot_stock(machine_id, c))
                 continue
 
+        if auto_advance and spins >= max_spins:
+            logging.warning(f"Session {session_id}: {spins} холостых прокрутов подряд — "
+                            f"считаю товар закончившимся, дальше не кручу")
+            break
+
+        spins += 1
         result = await _drive_slot(session_id, machine_id, cand)
         if result is None:
             # Нет ответа от VMC (связь/таймаут) — НЕ признак пустой спирали,
@@ -694,6 +708,13 @@ async def dispense(session_id: int, machine_id: str, slot_id: int, auto_advance:
         logging.warning(f"Session {session_id} slot {cand} failed: {last_error}"
                         + (", помечаю пустой и пробую следующую спираль" if auto_advance else ""))
 
+    # Клиенту/оператору показываем понятное, а не сырой код VMC. На этом
+    # автомате при пустой спирали прошивка возвращает и «Selection jammed», и
+    # паразитные коды несуществующих узлов (микроволновка/лифт) — по сути это
+    # всегда одно: товар не выпал. Точный код остаётся в логах выше для техника.
+    # При ручной точечной диагностике (auto_advance=false) оставляем сырой код.
+    if auto_advance:
+        return await _fail("Товар не выпал — возможно, закончился")
     return await _fail(last_error)
 
 
