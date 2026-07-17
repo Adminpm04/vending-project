@@ -103,6 +103,14 @@ class VMCLink:
         # Меню-команда 0x70 (тип 0x41) — какие номера слотов реально знает VMC.
         self._outbox.append(vmc.build_query_selection_number(self._next_pack_no()))
 
+    def queue_clear_jammed(self):
+        # 0x70 тип 0x32 — снять блокировку заклиненных селекций.
+        self._outbox.append(vmc.build_clear_jammed(self._next_pack_no()))
+
+    def queue_clear_motor_error(self):
+        # 0x70 тип 0x33 — снять ошибки моторов.
+        self._outbox.append(vmc.build_clear_motor_error(self._next_pack_no()))
+
     def queue_sync(self):
         self._outbox.append(vmc.build_sync(self._next_pack_no()))
 
@@ -238,7 +246,14 @@ async def ws_loop(link: VMCLink):
                             # 4.4.4: повторная синхронизация вызывает свежую
                             # выгрузку). Ответа не ждём — 0x11 сами придут
                             # через forward_slot_info.
-                            log.info("refresh_inventory requested")
+                            log.info("refresh_inventory requested (clear blocks + resync)")
+                            # Сначала снимаем аппаратную блокировку заклиненных
+                            # селекций и ошибки моторов, потом синхронизация —
+                            # чтобы пополненный ряд, застрявший в «pause» после
+                            # прошлых заклиниваний, снова стал рабочим, и свежий
+                            # 0x11 отразил уже разблокированное состояние.
+                            link.queue_clear_jammed()
+                            link.queue_clear_motor_error()
                             link.queue_sync()
                 finally:
                     forward_task.cancel()

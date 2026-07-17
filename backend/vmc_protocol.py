@@ -33,6 +33,9 @@ CMD_MENU_RESP = 0x71  # VMC → мы: ответ на меню-команду
 
 # Command type внутри пакета 0x70 (раздел 4.5 документации)
 MENU_QUERY_SELECTION_NUMBER = 0x41  # какие номера слотов реально знает VMC — проверить нашу нумерацию 1..8
+MENU_CLEAR_JAMMED = 0x32   # снять аппаратную блокировку заклиненных селекций (разд. 4.5.32)
+MENU_CLEAR_MOTOR_ERROR = 0x33  # снять ошибки моторов (разд. 4.5.33)
+MENU_OP_CLEAR = 0x01       # operation type 0x01 = «очистить» (0x00 = «запросить статус»)
 
 POLL_PACKET = bytes([0xFA, 0xFB, 0x41, 0x00, 0x40])
 ACK_PACKET = bytes([0xFA, 0xFB, 0x42, 0x00, 0x43])
@@ -138,6 +141,20 @@ def build_query_selection_number(pack_no: int) -> bytes:
     только заголовок (command type + operation type), остальное отдаём как
     есть в hex, чтобы разобрать вручную по факту, не переделывая протокол."""
     return build_packet(CMD_MENU_REQ, pack_no, bytes([MENU_QUERY_SELECTION_NUMBER, 0x00]))
+
+
+def build_clear_jammed(pack_no: int) -> bytes:
+    """0x70 command type 0x32, operation 0x01 — снять аппаратную блокировку со
+    всех заклиненных селекций (то же, что кнопка «Очистить заблокированные
+    каналы» в сервисном меню). После заклинивания VMC ставит селекцию в
+    «Selection pause» и сам её НЕ снимает даже после пополнения — эта команда
+    сбрасывает флаг, чтобы спираль снова можно было использовать."""
+    return build_packet(CMD_MENU_REQ, pack_no, bytes([MENU_CLEAR_JAMMED, MENU_OP_CLEAR]))
+
+
+def build_clear_motor_error(pack_no: int) -> bytes:
+    """0x70 command type 0x33, operation 0x01 — снять ошибки моторов (разд. 4.5.33)."""
+    return build_packet(CMD_MENU_REQ, pack_no, bytes([MENU_CLEAR_MOTOR_ERROR, MENU_OP_CLEAR]))
 
 
 def parse_menu_response(text: bytes) -> dict:

@@ -108,13 +108,17 @@ class VmcController(
                 executor.submit { handleQuerySelectionNumber(requestId) }
             }
             "refresh_inventory" -> {
-                // Оператор нажал «Обновить остатки» в админке — просим VMC
-                // заново прислать 0x11 по каждой селекции (разд. 4.4.4:
-                // повторная синхронизация вызывает свежую выгрузку остатков).
-                // Ответа ждать не нужно — пакеты 0x11 сами уйдут на сервер
-                // через forwardSlotInfoLoop, как только придут.
+                // Оператор нажал «Обновить остатки» (обычно после физической
+                // загрузки автомата). Сначала снимаем аппаратную блокировку
+                // заклиненных селекций и ошибки моторов — иначе пополненный
+                // ряд, застрявший в «Selection pause» после прошлых
+                // заклиниваний, так и останется недоступным. Потом синхро (0x31)
+                // — VMC пришлёт свежий 0x11 по каждой селекции (уже
+                // разблокированной). Ответов ждать не нужно.
                 if (link.isRunning) {
-                    Log.i(TAG, "refresh_inventory requested")
+                    Log.i(TAG, "refresh_inventory requested (clear blocks + resync)")
+                    link.queueClearJammed()
+                    link.queueClearMotorError()
                     link.queueSync()
                 }
             }

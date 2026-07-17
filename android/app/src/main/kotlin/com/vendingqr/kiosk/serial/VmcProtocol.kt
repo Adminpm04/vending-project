@@ -32,6 +32,9 @@ object VmcProtocol {
     const val CMD_MENU_REQ = 0x70
     const val CMD_MENU_RESP = 0x71
     const val MENU_QUERY_SELECTION_NUMBER = 0x41
+    const val MENU_CLEAR_JAMMED = 0x32
+    const val MENU_CLEAR_MOTOR_ERROR = 0x33
+    const val MENU_OP_CLEAR = 0x01
 
     val POLL_PACKET = byteArrayOf(0xFA.toByte(), 0xFB.toByte(), 0x41, 0x00, 0x40)
     val ACK_PACKET = byteArrayOf(0xFA.toByte(), 0xFB.toByte(), 0x42, 0x00, 0x43)
@@ -148,6 +151,17 @@ object VmcProtocol {
     /** 0x70 с command type 0x41 — «какие номера слотов реально знает VMC». */
     fun buildQuerySelectionNumber(packNo: Int): ByteArray =
         buildPacket(CMD_MENU_REQ, packNo, byteArrayOf(MENU_QUERY_SELECTION_NUMBER.toByte(), 0x00))
+
+    /** 0x70 тип 0x32, оп 0x01 — снять аппаратную блокировку заклиненных
+     * селекций (кнопка «Очистить заблокированные каналы» в сервисном меню).
+     * VMC после заклинивания ставит селекцию в «Selection pause» и сам её не
+     * снимает даже после пополнения — эта команда сбрасывает флаг. */
+    fun buildClearJammed(packNo: Int): ByteArray =
+        buildPacket(CMD_MENU_REQ, packNo, byteArrayOf(MENU_CLEAR_JAMMED.toByte(), MENU_OP_CLEAR.toByte()))
+
+    /** 0x70 тип 0x33, оп 0x01 — снять ошибки моторов (разд. 4.5.33). */
+    fun buildClearMotorError(packNo: Int): ByteArray =
+        buildPacket(CMD_MENU_REQ, packNo, byteArrayOf(MENU_CLEAR_MOTOR_ERROR.toByte(), MENU_OP_CLEAR.toByte()))
 
     data class MenuResponse(val commandType: Int?, val operationType: Int?, val rawHex: String)
 

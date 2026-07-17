@@ -755,7 +755,7 @@ async function viewPoint(c){
         <div style="background:var(--bg);border:1px solid var(--line);border-radius:14px;padding:10px 16px"><div class="sub">Продаж</div><div style="font-size:19px;font-weight:800">${st.sales}</div></div>
         <div style="background:var(--bg);border:1px solid var(--line);border-radius:14px;padding:10px 16px"><div class="sub">Слотов активно</div><div style="font-size:19px;font-weight:800">${active} / ${slots.length}</div></div>
         ${canEdit()?`<button onclick="refreshStock('${esc(S.pointId)}')" ${(m&&m.online)?'':'disabled'}
-             title="${(m&&m.online)?'Спросить у автомата реальный остаток по каждой спирали':'Автомат офлайн'}"
+             title="${(m&&m.online)?'Снять блокировки заклинивших спиралей и забрать с автомата реальный остаток (нажимать после загрузки автомата)':'Автомат офлайн'}"
              style="display:flex;align-items:center;gap:8px;font-size:12.5px;font-weight:800;color:var(--text);background:var(--bg);border:1.5px solid var(--line);border-radius:14px;padding:10px 16px;cursor:${(m&&m.online)?'pointer':'not-allowed'};opacity:${(m&&m.online)?'1':'.5'}">${ICON_REFRESH(15)}Обновить остатки</button>`:''}
         ${canEdit()?`<button onclick="regenToken('${esc(S.pointId)}')" title="Выдать новый токен контроллера для планшета" style="display:flex;align-items:center;gap:8px;font-size:12.5px;font-weight:800;color:var(--text);background:var(--bg);border:1.5px solid var(--line);border-radius:14px;padding:10px 16px;cursor:pointer">${ICON_KEY(15)}Перевыпустить токен</button>`:''}
       </div></div>`;

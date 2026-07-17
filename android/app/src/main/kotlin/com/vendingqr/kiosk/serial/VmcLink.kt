@@ -78,6 +78,16 @@ class VmcLink(private val devicePath: String, private val baudRate: Int) {
         outbox.addLast(VmcProtocol.buildQuerySelectionNumber(nextPackNo()))
     }
 
+    @Synchronized
+    fun queueClearJammed() {
+        outbox.addLast(VmcProtocol.buildClearJammed(nextPackNo()))
+    }
+
+    @Synchronized
+    fun queueClearMotorError() {
+        outbox.addLast(VmcProtocol.buildClearMotorError(nextPackNo()))
+    }
+
     // Не private: сервер может попросить обновить остатки на лету (см.
     // VmcController.handleServerMessage) — по протоколу (разд. 4.4.4) VMC на
     // повторную синхронизацию отвечает свежей выгрузкой инвентаря (0x11) по
