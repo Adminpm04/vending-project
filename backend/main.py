@@ -21,7 +21,7 @@ from database import (
     VendingMachine, ProductSlot, VendingSession, Blacklist, SessionStatus,
     AdminUser, AdminSession, AdminRole, Product,
 )
-from jetqr import create_invoice, check_invoice, cancel_invoice
+from payments import create_invoice, check_invoice, cancel_invoice, qr_payload
 from config import settings
 import auth as authlib
 
@@ -317,6 +317,7 @@ async def kiosk_buy(machine_id: str, data: dict, db: Session = Depends(get_db)):
 
     result = await create_invoice(
         machine_id, slot_id, slot.price,
+        session_id=session.id,
         store_id=machine.jetqr_store_id,
         terminal_id=machine.jetqr_terminal_id,
     )
@@ -374,8 +375,19 @@ async def kiosk_session_cancel(session_id: int, db: Session = Depends(get_db)):
 # ─── PAYMENT FLOW ────────────────────────────────────────────────────────────
 
 async def poll_payment(session_id: int, invoice_id: str):
-    """Поллинг JetQR раз в 2 с до оплаты (или таймаут). Затем — выдача."""
+    """Поллинг провайдера раз в 2 с до оплаты (или таймаут). Затем — выдача."""
     max_attempts = int(settings.PAYMENT_POLL_TIMEOUT / settings.PAYMENT_POLL_INTERVAL)
+
+    # Сумма нужна ExpressPay: она входит в подпись getpaystatus (JetQR её
+    # игнорирует). Читаем один раз — по ходу сессии цена не меняется.
+    def _load_amount():
+        db = SessionLocal()
+        try:
+            s = db.query(VendingSession).filter(VendingSession.id == session_id).first()
+            return float(s.amount) if s and s.amount is not None else 0.0
+        finally:
+            db.close()
+    amount = await _db(_load_amount)
 
     for _ in range(max_attempts):
         await asyncio.sleep(settings.PAYMENT_POLL_INTERVAL)
@@ -390,7 +402,7 @@ async def poll_payment(session_id: int, invoice_id: str):
         if not await _db(_still_pending):
             return  # сессию отменили/закрыли — прекращаем поллинг
 
-        result = await check_invoice(invoice_id)
+        result = await check_invoice(invoice_id, amount)
 
         if result.get("paid"):
             phone = result.get("phone")
@@ -1582,10 +1594,17 @@ async def remove_blacklist(entry_id: int, db: Session = Depends(get_db)):
 # ─── QR GENERATOR ────────────────────────────────────────────────────────────
 
 @app.get("/api/qr/{invoice_id}")
-async def generate_qr(invoice_id: str):
+async def generate_qr(invoice_id: str, db: Session = Depends(get_db)):
     import qrcode, io
+    # У JetQR в QR идёт сам invoice_id. У ExpressPay — ссылка pay.expresspay.tj,
+    # для неё нужна сумма покупки: берём её из сессии по invoice_id.
+    amount = None
+    if (settings.PAYMENT_PROVIDER or "").lower() == "expresspay":
+        s = db.query(VendingSession).filter(VendingSession.invoice_id == invoice_id).first()
+        amount = float(s.amount) if s and s.amount is not None else 0
+    data = qr_payload(invoice_id, amount)
     qr = qrcode.QRCode(version=1, box_size=10, border=2)
-    qr.add_data(invoice_id)
+    qr.add_data(data)
     qr.make(fit=True)
     img = qr.make_image(fill_color="black", back_color="white")
     buf = io.BytesIO()
