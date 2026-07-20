@@ -17,6 +17,19 @@ class Settings(BaseSettings):
     # поэтому вынесен в настройку, а не захардкожен.
     JETQR_CANCEL_PATH: str = "/api/v1/merchant/invoice/cancel"
 
+    # Платёжный провайдер: "jetqr" | "expresspay". Пока не переключаем боевой
+    # флоу — ExpressPay включается сменой этой настройки, когда банк откроет
+    # endpoint статуса (getpaystatus сейчас отдаёт 404, нужен наш IP в белом
+    # списке банка).
+    PAYMENT_PROVIDER: str = "jetqr"
+
+    # ExpressPay / DCWallet (Dushanbe City)
+    EXPRESSPAY_QR_BASE: str = "http://pay.expresspay.tj/"
+    EXPRESSPAY_STATUS_URL: str = "https://api1.dc.tj/v3/vending"
+    EXPRESSPAY_CARD: str = "5058270380007475"   # pan — карта получателя (из QR-наклейки)
+    EXPRESSPAY_ARTICLE: str = "124"             # f1 — артикул услуги (уточнить у Душанбе Сити под вендинг)
+    EXPRESSPAY_SECRET: str = "ddbbcff0-9db0-4897-9d38-b80babe32306"  # секрет для md5-подписи
+
     # Payment
     PAYMENT_POLL_INTERVAL: float = 2.0    # сек; чаще нельзя — JetQR блокирует терминал
     PAYMENT_POLL_TIMEOUT: int = 300       # сек; сколько ждём оплату после показа QR
