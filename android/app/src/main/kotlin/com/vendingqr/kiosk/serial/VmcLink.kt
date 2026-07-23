@@ -35,6 +35,10 @@ class VmcLink(private val devicePath: String, private val baudRate: Int) {
     /** Ответы на меню-команды (0x71) — читаются VmcController'ом. */
     val menuEvents = LinkedBlockingQueue<VmcProtocol.MenuResponse>()
 
+    /** Пакеты 0x11 — VMC сам, без нашего запроса, шлёт реальный остаток по
+     * селекции. Читаются фоновой пересылкой на сервер в VmcController'е. */
+    val slotInfoEvents = LinkedBlockingQueue<VmcProtocol.SlotInfo>()
+
     @Volatile
     var synced = false
         private set
@@ -75,7 +79,21 @@ class VmcLink(private val devicePath: String, private val baudRate: Int) {
     }
 
     @Synchronized
-    private fun queueSync() {
+    fun queueClearJammed() {
+        outbox.addLast(VmcProtocol.buildClearJammed(nextPackNo()))
+    }
+
+    @Synchronized
+    fun queueClearMotorError() {
+        outbox.addLast(VmcProtocol.buildClearMotorError(nextPackNo()))
+    }
+
+    // Не private: сервер может попросить обновить остатки на лету (см.
+    // VmcController.handleServerMessage) — по протоколу (разд. 4.4.4) VMC на
+    // повторную синхронизацию отвечает свежей выгрузкой инвентаря (0x11) по
+    // каждой селекции, не только при самом первом старте.
+    @Synchronized
+    fun queueSync() {
         outbox.addLast(VmcProtocol.buildSync(nextPackNo()))
     }
 
@@ -195,7 +213,9 @@ class VmcLink(private val devicePath: String, private val baudRate: Int) {
                 menuEvents.offer(resp)
             }
             VmcProtocol.CMD_SLOT_INFO -> {
-                // Цены/остатки ведёт сервер — информация VMC не используется.
+                val info = VmcProtocol.parseSlotInfo(packet.text)
+                Log.i(TAG, "Slot info: $info")
+                slotInfoEvents.offer(info)
             }
             else -> Log.d(TAG, "VMC cmd 0x%02X text=%s".format(packet.command, packet.text.joinToString("") { "%02X".format(it.toInt() and 0xFF) }))
         }

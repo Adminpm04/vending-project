@@ -53,12 +53,34 @@ class VmcController(
             Log.e(TAG, "failed to open serial port", e)
         }
         ws.connect()
+        executor.submit(::forwardSlotInfoLoop)
     }
 
     fun stop() {
         ws.disconnect()
         link.stop()
         executor.shutdownNow()
+    }
+
+    /** VMC сам, без нашего запроса, шлёт 0x11 с реальным остатком по селекции —
+     * пересылаем на сервер сразу как пришло, независимо от команд с сервера. */
+    private fun forwardSlotInfoLoop() {
+        while (!Thread.currentThread().isInterrupted) {
+            val info = try {
+                link.slotInfoEvents.take()
+            } catch (e: InterruptedException) {
+                return
+            }
+            ws.send(JSONObject().apply {
+                put("type", "slot_info")
+                put("slot", info.slot)
+                put("price_raw", info.priceRaw)
+                put("inventory", info.inventory)
+                put("capacity", info.capacity)
+                put("commodity_number", info.commodityNumber)
+                put("paused", info.paused)
+            })
+        }
     }
 
     private fun handleServerMessage(msg: JSONObject) {
@@ -85,6 +107,21 @@ class VmcController(
                 val requestId = msg.optString("request_id")
                 executor.submit { handleQuerySelectionNumber(requestId) }
             }
+            "refresh_inventory" -> {
+                // Оператор нажал «Обновить остатки» (обычно после физической
+                // загрузки автомата). Сначала снимаем аппаратную блокировку
+                // заклиненных селекций и ошибки моторов — иначе пополненный
+                // ряд, застрявший в «Selection pause» после прошлых
+                // заклиниваний, так и останется недоступным. Потом синхро (0x31)
+                // — VMC пришлёт свежий 0x11 по каждой селекции (уже
+                // разблокированной). Ответов ждать не нужно.
+                if (link.isRunning) {
+                    Log.i(TAG, "refresh_inventory requested (clear blocks + resync)")
+                    link.queueClearJammed()
+                    link.queueClearMotorError()
+                    link.queueSync()
+                }
+            }
         }
     }
 
@@ -107,6 +144,11 @@ class VmcController(
         // ДРУГОГО слота, poll() без проверки принял бы чужой ответ за наш.
         // Отбрасываем несовпадающие по слоту события и ждём дальше — до
         // общего дедлайна, а не по одному poll() с полным таймаутом.
+        // slot=0 — отдельный случай, не "чужой ответ": для трёхзначных
+        // селекций (ряд+позиция, напр. 101) эта прошивка VMC в финальном
+        // статусе выдачи всегда возвращает 0 вместо реального номера
+        // (обнаружено на живом тесте — 0x02/0x24 с slot=0 отбрасывались как
+        // stale, и настоящая успешная выдача репортилась как timeout).
         val deadline = System.currentTimeMillis() + 45_000
         var status: VmcProtocol.DispenseStatus? = null
         while (System.currentTimeMillis() < deadline) {
@@ -116,7 +158,7 @@ class VmcController(
             } catch (e: InterruptedException) {
                 null
             } ?: break
-            if (ev.slot != null && ev.slot != slotId) {
+            if (ev.slot != null && ev.slot != 0 && ev.slot != slotId) {
                 Log.w(TAG, "dispense status for slot ${ev.slot}, expected $slotId (session=$sessionId) — stale, ignoring")
                 continue
             }

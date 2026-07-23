@@ -32,6 +32,9 @@ object VmcProtocol {
     const val CMD_MENU_REQ = 0x70
     const val CMD_MENU_RESP = 0x71
     const val MENU_QUERY_SELECTION_NUMBER = 0x41
+    const val MENU_CLEAR_JAMMED = 0x32
+    const val MENU_CLEAR_MOTOR_ERROR = 0x33
+    const val MENU_OP_CLEAR = 0x01
 
     val POLL_PACKET = byteArrayOf(0xFA.toByte(), 0xFB.toByte(), 0x41, 0x00, 0x40)
     val ACK_PACKET = byteArrayOf(0xFA.toByte(), 0xFB.toByte(), 0x42, 0x00, 0x43)
@@ -149,6 +152,17 @@ object VmcProtocol {
     fun buildQuerySelectionNumber(packNo: Int): ByteArray =
         buildPacket(CMD_MENU_REQ, packNo, byteArrayOf(MENU_QUERY_SELECTION_NUMBER.toByte(), 0x00))
 
+    /** 0x70 тип 0x32, оп 0x01 — снять аппаратную блокировку заклиненных
+     * селекций (кнопка «Очистить заблокированные каналы» в сервисном меню).
+     * VMC после заклинивания ставит селекцию в «Selection pause» и сам её не
+     * снимает даже после пополнения — эта команда сбрасывает флаг. */
+    fun buildClearJammed(packNo: Int): ByteArray =
+        buildPacket(CMD_MENU_REQ, packNo, byteArrayOf(MENU_CLEAR_JAMMED.toByte(), MENU_OP_CLEAR.toByte()))
+
+    /** 0x70 тип 0x33, оп 0x01 — снять ошибки моторов (разд. 4.5.33). */
+    fun buildClearMotorError(packNo: Int): ByteArray =
+        buildPacket(CMD_MENU_REQ, packNo, byteArrayOf(MENU_CLEAR_MOTOR_ERROR.toByte(), MENU_OP_CLEAR.toByte()))
+
     data class MenuResponse(val commandType: Int?, val operationType: Int?, val rawHex: String)
 
     /** Разобрать Text пакета 0x71 — формат тела зависит от command type и не
@@ -187,6 +201,30 @@ object VmcProtocol {
         } else null
         val message = SELECTION_STATES[state] ?: "state 0x%02X".format(state)
         return SelectionState(state == SELECTION_OK, state, slot, message)
+    }
+
+    data class SlotInfo(
+        val slot: Int,
+        val priceRaw: Long,
+        val inventory: Int,
+        val capacity: Int,
+        val commodityNumber: Int,
+        val paused: Boolean,
+    )
+
+    /** Разобрать Text пакета 0x11 (разд. 4.2.1): VMC сам, без запроса, шлёт
+     * реальный остаток по селекции — "Upper computer doesn't need to
+     * calculate the selection inventory. It can get inventory info from
+     * this command." Формат: slot(2) + price(4) + inventory(1) + capacity(1)
+     * + commodity number(2) + status(1: 1=пауза, 0=норма). */
+    fun parseSlotInfo(text: ByteArray): SlotInfo {
+        val slot = ((text[0].toInt() and 0xFF) shl 8) or (text[1].toInt() and 0xFF)
+        val priceRaw = (0 until 4).fold(0L) { acc, i -> (acc shl 8) or (text[2 + i].toLong() and 0xFF) }
+        val inventory = text[6].toInt() and 0xFF
+        val capacity = text[7].toInt() and 0xFF
+        val commodityNumber = ((text[8].toInt() and 0xFF) shl 8) or (text[9].toInt() and 0xFF)
+        val paused = (text[10].toInt() and 0xFF) == 1
+        return SlotInfo(slot, priceRaw, inventory, capacity, commodityNumber, paused)
     }
 
     data class Packet(val command: Int, val packNo: Int?, val text: ByteArray)

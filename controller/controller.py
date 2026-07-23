@@ -66,6 +66,7 @@ class VMCLink:
         self.selection_events: asyncio.Queue = asyncio.Queue()
         self.elevator_events: asyncio.Queue = asyncio.Queue()
         self.menu_events: asyncio.Queue = asyncio.Queue()
+        self.slot_info_events: asyncio.Queue = asyncio.Queue()
         self.synced = False
 
     def _next_pack_no(self) -> int:
@@ -101,6 +102,14 @@ class VMCLink:
     def queue_query_selection_number(self):
         # Меню-команда 0x70 (тип 0x41) — какие номера слотов реально знает VMC.
         self._outbox.append(vmc.build_query_selection_number(self._next_pack_no()))
+
+    def queue_clear_jammed(self):
+        # 0x70 тип 0x32 — снять блокировку заклиненных селекций.
+        self._outbox.append(vmc.build_clear_jammed(self._next_pack_no()))
+
+    def queue_clear_motor_error(self):
+        # 0x70 тип 0x33 — снять ошибки моторов.
+        self._outbox.append(vmc.build_clear_motor_error(self._next_pack_no()))
 
     def queue_sync(self):
         self._outbox.append(vmc.build_sync(self._next_pack_no()))
@@ -172,9 +181,30 @@ class VMCLink:
             asyncio.run_coroutine_threadsafe(
                 self.menu_events.put(resp), self._loop)
         elif command == vmc.CMD_SLOT_INFO:
+            # VMC сам, без нашего запроса, докладывает реальный остаток по
+            # селекции (см. parse_slot_info) — пересылаем на сервер как есть,
+            # сервер уже решает, доверять ли и как использовать.
+            info = vmc.parse_slot_info(text)
+            log.info(f"Slot info: {info}")
+            asyncio.run_coroutine_threadsafe(
+                self.slot_info_events.put(info), self._loop)
+        elif command == vmc.CMD_SLOT_INFO:
             pass  # цены/остатки ведёт сервер — информация VMC не используется
         else:
             log.debug(f"VMC cmd 0x{command:02X} text={text.hex()}")
+
+
+async def forward_slot_info(link: VMCLink, ws):
+    """VMC сам, без нашего запроса, шлёт 0x11 с реальным остатком по
+    селекции — пересылаем на сервер сразу как пришло, не дожидаясь запроса.
+    Отдельная задача, не завязанная на входящий цикл сообщений от сервера."""
+    while True:
+        info = await link.slot_info_events.get()
+        try:
+            await ws.send(json.dumps({"type": "slot_info", **info}))
+        except Exception as e:
+            log.warning(f"Failed to forward slot_info: {e}")
+            return
 
 
 async def ws_loop(link: VMCLink):
@@ -186,28 +216,47 @@ async def ws_loop(link: VMCLink):
             async with websockets.connect(url, ping_interval=20) as ws:
                 log.info(f"Connected to server as {MACHINE_ID}")
                 backoff = 1
-                async for raw in ws:
-                    try:
-                        msg = json.loads(raw)
-                    except ValueError:
-                        continue
-                    if msg.get("type") == "ping":
-                        await ws.send('{"type":"pong"}')
-                    elif msg.get("type") == "dispense":
-                        asyncio.create_task(
-                            handle_dispense(link, ws, msg["session_id"], msg["slot_id"]))
-                    elif msg.get("type") == "check_slot":
-                        asyncio.create_task(
-                            handle_check_slot(link, ws, msg["request_id"], msg["slot_id"]))
-                    elif msg.get("type") == "check_elevator":
-                        asyncio.create_task(
-                            handle_check_elevator(link, ws, msg["request_id"]))
-                    elif msg.get("type") == "cancel_selection":
-                        asyncio.create_task(
-                            handle_cancel_selection(link, ws, msg["request_id"]))
-                    elif msg.get("type") == "query_selection_number":
-                        asyncio.create_task(
-                            handle_query_selection_number(link, ws, msg["request_id"]))
+                forward_task = asyncio.create_task(forward_slot_info(link, ws))
+                try:
+                    async for raw in ws:
+                        try:
+                            msg = json.loads(raw)
+                        except ValueError:
+                            continue
+                        if msg.get("type") == "ping":
+                            await ws.send('{"type":"pong"}')
+                        elif msg.get("type") == "dispense":
+                            asyncio.create_task(
+                                handle_dispense(link, ws, msg["session_id"], msg["slot_id"]))
+                        elif msg.get("type") == "check_slot":
+                            asyncio.create_task(
+                                handle_check_slot(link, ws, msg["request_id"], msg["slot_id"]))
+                        elif msg.get("type") == "check_elevator":
+                            asyncio.create_task(
+                                handle_check_elevator(link, ws, msg["request_id"]))
+                        elif msg.get("type") == "cancel_selection":
+                            asyncio.create_task(
+                                handle_cancel_selection(link, ws, msg["request_id"]))
+                        elif msg.get("type") == "query_selection_number":
+                            asyncio.create_task(
+                                handle_query_selection_number(link, ws, msg["request_id"]))
+                        elif msg.get("type") == "refresh_inventory":
+                            # Оператор нажал «Обновить остатки» — просим VMC
+                            # заново прислать 0x11 по каждой селекции (разд.
+                            # 4.4.4: повторная синхронизация вызывает свежую
+                            # выгрузку). Ответа не ждём — 0x11 сами придут
+                            # через forward_slot_info.
+                            log.info("refresh_inventory requested (clear blocks + resync)")
+                            # Сначала снимаем аппаратную блокировку заклиненных
+                            # селекций и ошибки моторов, потом синхронизация —
+                            # чтобы пополненный ряд, застрявший в «pause» после
+                            # прошлых заклиниваний, снова стал рабочим, и свежий
+                            # 0x11 отразил уже разблокированное состояние.
+                            link.queue_clear_jammed()
+                            link.queue_clear_motor_error()
+                            link.queue_sync()
+                finally:
+                    forward_task.cancel()
         except Exception as e:
             log.warning(f"WS disconnected: {e}; retry in {backoff}s")
             await asyncio.sleep(backoff)
@@ -229,6 +278,11 @@ async def handle_dispense(link: VMCLink, ws, session_id: int, slot_id: int):
     # мы уже отправили команду для ДРУГОГО слота, наивный get() принял бы
     # чужой ответ за наш. Отбрасываем несовпадающие по слоту события и ждём
     # дальше — до общего дедлайна, а не одним ожиданием с полным таймаутом.
+    # slot=0 — отдельный случай, не "чужой ответ": для трёхзначных селекций
+    # (ряд+позиция, напр. 101) эта прошивка VMC в финальном статусе выдачи
+    # всегда возвращает 0 вместо реального номера (обнаружено на живом
+    # тесте — 0x02/0x24 с slot=0 отбрасывались как stale, и настоящая
+    # успешная выдача репортилась как timeout).
     deadline = asyncio.get_event_loop().time() + 45
     status = None
     while True:
@@ -241,7 +295,7 @@ async def handle_dispense(link: VMCLink, ws, session_id: int, slot_id: int):
         except asyncio.TimeoutError:
             status = {"kind": "error", "code": None, "message": "VMC response timeout"}
             break
-        if ev.get("slot") is not None and ev["slot"] != slot_id:
+        if ev.get("slot") is not None and ev["slot"] != 0 and ev["slot"] != slot_id:
             log.warning(f"Dispense status for slot {ev['slot']}, expected {slot_id} (session={session_id}) — stale, ignoring")
             continue
         status = ev
