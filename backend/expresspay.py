@@ -42,13 +42,15 @@ def _fmt_amount(amount: float) -> str:
     return str(int(amount)) if float(amount) == int(amount) else str(amount)
 
 
-def build_qr_url(order_id: int | str, amount: float, comment: str | None = None) -> str:
+def build_qr_url(order_id: int | str, amount: float, comment: str | None = None,
+                 pan: str | None = None) -> str:
     """Ссылка ExpressPay/DCWallet для QR. При скане клиента перебрасывает на
     страницу оплаты или открывает DCWallet. order_id кладём в c (комментарий) —
-    по нему getpaystatus потом находит платёж."""
+    по нему getpaystatus потом находит платёж. pan — карта конкретной точки
+    (у каждой точки свой); если не передан — глобальный settings.EXPRESSPAY_CARD."""
     c = comment if comment is not None else str(order_id)
     params = {
-        "a": settings.EXPRESSPAY_CARD,     # pan — карта получателя
+        "a": pan or settings.EXPRESSPAY_CARD,  # pan — карта получателя (per-machine)
         "s": _fmt_amount(amount),          # сумма
         "c": c,                            # комментарий = наш order_id
         "f1": settings.EXPRESSPAY_ARTICLE, # артикул услуги (даёт Душанбе Сити)
@@ -64,15 +66,16 @@ def _sign(inputdate: str, pan: str, order_id: str) -> str:
     return hashlib.md5(raw.encode()).hexdigest()
 
 
-async def get_pay_status(order_id: int | str, amount: float) -> dict:
+async def get_pay_status(order_id: int | str, amount: float, pan: str | None = None) -> dict:
     """getpaystatus. Возвращает форму, совместимую с poll_payment:
        {"paid": bool, "pending": bool, "phone": .., "amount": .., "bank": ..}.
 
     Ответ банка: code 200 (нашёл, есть status "Успешно оплачен"),
     102 (платежа пока нет), 101 (неверная подпись).
     Запрос активен только 1 минуту с момента оплаты — важно опрашивать
-    непрерывно, пока висит экран оплаты."""
-    pan = settings.EXPRESSPAY_CARD
+    непрерывно, пока висит экран оплаты. pan — карта точки (per-machine),
+    он же входит в md5-подпись; если не передан — глобальный settings.EXPRESSPAY_CARD."""
+    pan = pan or settings.EXPRESSPAY_CARD
     order_id = str(order_id)
     inputdate = datetime.datetime.now().strftime("%y%m%d%H%M%S")
     params = {

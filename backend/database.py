@@ -52,6 +52,9 @@ class VendingMachine(Base):
     # Если NULL — используются значения из settings.
     jetqr_store_id = Column(String(50), nullable=True)
     jetqr_terminal_id = Column(String(50), nullable=True)
+    # PAN (карта получателя) для ExpressPay/DCWallet — у каждой точки свой QR/pan
+    # (подтверждено поставщиком). Если NULL — берётся глобальный settings.EXPRESSPAY_CARD.
+    expresspay_pan = Column(String(32), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
     slots = relationship("ProductSlot", back_populates="machine")
@@ -169,6 +172,7 @@ def _migrate():
         "ALTER TABLE vending_machines ADD COLUMN IF NOT EXISTS lng DOUBLE PRECISION",
         "ALTER TABLE product_slots ADD COLUMN IF NOT EXISTS product_id INTEGER",
         "ALTER TABLE products ADD COLUMN IF NOT EXISTS in_default_assortment BOOLEAN DEFAULT TRUE",
+        "ALTER TABLE vending_machines ADD COLUMN IF NOT EXISTS expresspay_pan VARCHAR(32)",
     ]
     with engine.begin() as conn:
         for stmt in statements:

@@ -24,10 +24,15 @@ class Settings(BaseSettings):
     PAYMENT_PROVIDER: str = "jetqr"
 
     # ExpressPay / DCWallet (Dushanbe City)
-    EXPRESSPAY_QR_BASE: str = "http://pay.expresspay.tj/"
+    # База QR: pay.dc.tj (подтверждена поставщиком 2026-07; ранее была pay.expresspay.tj).
+    EXPRESSPAY_QR_BASE: str = "https://pay.dc.tj/"
+    # Endpoint статуса оплаты — точный путь ещё уточняется у поставщика
+    # (текущий /v3/vending отдаёт 404 «Not Found»). Вынесен в настройку.
     EXPRESSPAY_STATUS_URL: str = "https://api1.dc.tj/v3/vending"
-    EXPRESSPAY_CARD: str = "5058270380007475"   # pan — карта получателя (из QR-наклейки)
-    EXPRESSPAY_ARTICLE: str = "124"             # f1 — артикул услуги (уточнить у Душанбе Сити под вендинг)
+    # Глобальный pan-fallback. Реальный pan берётся с автомата (VendingMachine.expresspay_pan),
+    # т.к. у каждой точки свой QR/pan; это значение используется, только если у точки не задан свой.
+    EXPRESSPAY_CARD: str = "5058270380027408"   # pan — карта получателя (из QR-наклейки)
+    EXPRESSPAY_ARTICLE: str = "133"             # f1 — артикул услуги для вендинга (указан провайдером: F1=133)
     EXPRESSPAY_SECRET: str = "ddbbcff0-9db0-4897-9d38-b80babe32306"  # секрет для md5-подписи
 
     # Payment

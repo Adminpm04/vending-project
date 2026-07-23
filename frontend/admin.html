@@ -612,6 +612,7 @@ function openEditPointModal(mid){
     <div style="display:flex;flex-direction:column;gap:10px">
       <input id="ep-name" class="fld" placeholder="Название" value="${esc(m.name||'')}">
       <input id="ep-location" class="fld" placeholder="Локация / адрес" value="${esc(m.location||'')}">
+      <input id="ep-pan" class="fld" placeholder="PAN для оплаты (ExpressPay/DC) — свой у каждой точки" value="${esc(m.expresspay_pan||'')}">
       <div style="display:flex;gap:10px;margin-top:6px">
         <button class="btn-accent" style="flex:1;padding:13px" onclick="submitEditPoint('${esc(mid)}')">Сохранить</button>
         <button onclick="closeModal()" style="padding:13px 20px;border-radius:11px;border:1.5px solid var(--line);background:var(--bg);color:var(--text);font-weight:700;cursor:pointer">Отмена</button>
@@ -621,9 +622,10 @@ function openEditPointModal(mid){
 async function submitEditPoint(mid){
   const name=document.getElementById('ep-name').value.trim();
   const location=document.getElementById('ep-location').value.trim();
+  const expresspay_pan=document.getElementById('ep-pan').value.trim();
   try{
-    await api(`/api/admin/machines/${encodeURIComponent(mid)}`,{method:'POST',body:JSON.stringify({name,location})});
-    const m=S.machines.find(x=>x.machine_id===mid); if(m){ m.name=name; m.location=location; }
+    await api(`/api/admin/machines/${encodeURIComponent(mid)}`,{method:'POST',body:JSON.stringify({name,location,expresspay_pan})});
+    const m=S.machines.find(x=>x.machine_id===mid); if(m){ m.name=name; m.location=location; m.expresspay_pan=expresspay_pan||null; }
     closeModal(); toast('Сохранено'); render();
   }catch(e){ toast('Не удалось сохранить'); }
 }

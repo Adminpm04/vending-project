@@ -38,18 +38,19 @@ async def create_invoice(machine_id, slot_id, amount, *, session_id,
         machine_id, slot_id, amount, store_id=store_id, terminal_id=terminal_id)
 
 
-async def check_invoice(invoice_id, amount=None) -> dict:
+async def check_invoice(invoice_id, amount=None, pan=None) -> dict:
     if _provider() == "expresspay":
-        # getpaystatus требует и order_id, и сумму (сумма входит в подпись).
-        return await expresspay.get_pay_status(invoice_id, amount or 0)
+        # getpaystatus требует order_id, сумму (входит в подпись) и pan точки.
+        return await expresspay.get_pay_status(invoice_id, amount or 0, pan=pan)
     return await jetqr.check_invoice(invoice_id)
 
 
-def qr_payload(invoice_id, amount=None) -> str:
+def qr_payload(invoice_id, amount=None, pan=None) -> str:
     """Данные для отрисовки в QR. У JetQR это сам invoice_id, у ExpressPay —
-    ссылка pay.expresspay.tj с суммой и order_id в комментарии."""
+    ссылка pay.dc.tj с суммой и order_id в комментарии. pan — карта точки
+    (per-machine); у JetQR игнорируется."""
     if _provider() == "expresspay":
-        return expresspay.build_qr_url(invoice_id, amount or 0)
+        return expresspay.build_qr_url(invoice_id, amount or 0, pan=pan)
     return invoice_id
 
 

@@ -380,14 +380,21 @@ async def poll_payment(session_id: int, invoice_id: str):
 
     # Сумма нужна ExpressPay: она входит в подпись getpaystatus (JetQR её
     # игнорирует). Читаем один раз — по ходу сессии цена не меняется.
-    def _load_amount():
+    def _load_amount_pan():
         db = SessionLocal()
         try:
             s = db.query(VendingSession).filter(VendingSession.id == session_id).first()
-            return float(s.amount) if s and s.amount is not None else 0.0
+            amt = float(s.amount) if s and s.amount is not None else 0.0
+            # pan точки нужен ExpressPay: он входит в подпись getpaystatus (у
+            # каждой точки свой). JetQR его игнорирует.
+            pan = None
+            if s:
+                m = db.query(VendingMachine).filter(VendingMachine.machine_id == s.machine_id).first()
+                pan = m.expresspay_pan if m else None
+            return amt, pan
         finally:
             db.close()
-    amount = await _db(_load_amount)
+    amount, pan = await _db(_load_amount_pan)
 
     for _ in range(max_attempts):
         await asyncio.sleep(settings.PAYMENT_POLL_INTERVAL)
@@ -402,7 +409,7 @@ async def poll_payment(session_id: int, invoice_id: str):
         if not await _db(_still_pending):
             return  # сессию отменили/закрыли — прекращаем поллинг
 
-        result = await check_invoice(invoice_id, amount)
+        result = await check_invoice(invoice_id, amount, pan=pan)
 
         if result.get("paid"):
             phone = result.get("phone")
@@ -1062,6 +1069,7 @@ async def add_machine(data: dict, db: Session = Depends(get_db)):
         secret_token=token,
         jetqr_store_id=data.get("jetqr_store_id"),
         jetqr_terminal_id=data.get("jetqr_terminal_id"),
+        expresspay_pan=(data.get("expresspay_pan") or "").strip() or None,
     )
     db.add(m)
     # Стандартный ассортимент сети — большинство точек продают один и тот же
@@ -1107,6 +1115,7 @@ async def list_machines(db: Session = Depends(get_db)):
             "online": m.machine_id in machine_clients,
             "lat": m.lat,
             "lng": m.lng,
+            "expresspay_pan": m.expresspay_pan,
         }
         for m in machines
     ]
@@ -1139,6 +1148,8 @@ async def update_machine(machine_id: str, data: dict, db: Session = Depends(get_
         m.name = (data["name"] or "").strip() or None
     if "location" in data:
         m.location = (data["location"] or "").strip() or None
+    if "expresspay_pan" in data:
+        m.expresspay_pan = (data["expresspay_pan"] or "").strip() or None
     db.commit()
     return {"success": True}
 
@@ -1599,10 +1610,14 @@ async def generate_qr(invoice_id: str, db: Session = Depends(get_db)):
     # У JetQR в QR идёт сам invoice_id. У ExpressPay — ссылка pay.expresspay.tj,
     # для неё нужна сумма покупки: берём её из сессии по invoice_id.
     amount = None
+    pan = None
     if (settings.PAYMENT_PROVIDER or "").lower() == "expresspay":
         s = db.query(VendingSession).filter(VendingSession.invoice_id == invoice_id).first()
         amount = float(s.amount) if s and s.amount is not None else 0
-    data = qr_payload(invoice_id, amount)
+        if s:
+            m = db.query(VendingMachine).filter(VendingMachine.machine_id == s.machine_id).first()
+            pan = m.expresspay_pan if m else None
+    data = qr_payload(invoice_id, amount, pan=pan)
     qr = qrcode.QRCode(version=1, box_size=10, border=2)
     qr.add_data(data)
     qr.make(fit=True)
